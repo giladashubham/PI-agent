@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { Text } from "@mariozechner/pi-tui";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 interface AskQuestionItem {
   id: string;
@@ -26,6 +29,17 @@ interface PlanModeState {
   phase?: PlanPhase;
 }
 
+interface ModeProfileConfig {
+  model?: string;
+  thinkingLevel?: string;
+}
+
+interface PlanModeConfig {
+  defaults?: ModeProfileConfig;
+  plan?: ModeProfileConfig;
+  implement?: ModeProfileConfig;
+}
+
 const PLAN_MODE_PROMPT = `
 
 ## Plan Mode (Question-First)
@@ -34,8 +48,8 @@ You are in plan mode.
 
 Rules:
 - Planning only. Do not implement, patch files, or perform write actions.
-- First understand the request, then inspect the codebase with read-only tools if needed.
-- If key information is missing, use the ask_questions tool before proposing a plan.
+- Inspect the codebase with read-only tools when the task depends on repository context.
+- If key information is still missing after relevant inspection, use the ask_questions tool before proposing a plan.
 - Do not make silent assumptions about product requirements, UX, naming, API shape, data flow, edge cases, rollout, or testing expectations.
 - Ask only the minimum useful questions, usually 1-5 at a time.
 - Questions should be direct, neutral, and non-leading.
@@ -53,20 +67,36 @@ After you have enough information, respond with this structure:
 const CLARIFY_FIRST_PROMPT = `
 
 Current phase: clarification.
-For this turn, ask clarifying questions only, then stop.
-Do not provide a plan in this turn.
-Tell the user they can respond with /answer <responses> (or a normal message).
+For this turn:
+1) If the task needs repo context, inspect the codebase with read-only tools.
+2) Ask clarifying questions only if still needed.
+Do not provide the final plan in this turn.
 `;
 
 const PLAN_FROM_ANSWERS_PROMPT = `
 
 Current phase: planning.
-Use the user's latest clarification answers and produce the full plan now.
+Use the latest codebase context and the user's clarification answers to produce the full plan now.
+Do not ask more clarifying questions in this turn.
 Include a "Plan:" header followed by numbered steps.
 `;
 
+const PLAN_MODE_CONFIG_PATH = join(homedir(), ".pi", "agent", "plan-mode.json");
+const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
+
+function loadPlanModeConfig(): PlanModeConfig {
+  try {
+    if (!existsSync(PLAN_MODE_CONFIG_PATH)) return {};
+    const parsed = JSON.parse(readFileSync(PLAN_MODE_CONFIG_PATH, "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as PlanModeConfig) : {};
+  } catch {
+    return {};
+  }
+}
+
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
 const PLAN_TOOL_WHITELIST = new Set(["read", "bash", "grep", "find", "ls", "web_fetch", "ask_questions"]);
+const NO_CLARIFY_NEEDED_PATTERN = /no clarifying questions needed/i;
 const DANGEROUS_BASH_PATTERNS = [
   /\brm\b/i,
   /\brmdir\b/i,
@@ -240,6 +270,120 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
   let previousTools: string[] = [];
   let phase: PlanPhase = "clarify";
   let lastPromptedPlan = "";
+  let askQuestionsUsedInClarify = false;
+  let askQuestionsCancelledInClarify = false;
+  let modelBeforePlanRef: string | undefined;
+  let thinkingBeforePlan: string | undefined;
+
+  function resetClarifyTracking() {
+    askQuestionsUsedInClarify = false;
+    askQuestionsCancelledInClarify = false;
+  }
+
+  function normalizeThinkingLevel(level: string | undefined): string | undefined {
+    if (!level) return undefined;
+    const normalized = level.trim().toLowerCase();
+    return VALID_THINKING_LEVELS.has(normalized) ? normalized : undefined;
+  }
+
+  function currentModelRef(ctx: ExtensionContext): string | undefined {
+    const model = ctx.model as { provider?: string; id?: string } | undefined;
+    if (!model?.provider || !model.id) return undefined;
+    return `${model.provider}/${model.id}`;
+  }
+
+  function resolveModelRef(ctx: ExtensionContext, modelRef: string): unknown {
+    const trimmed = modelRef.trim();
+    if (!trimmed) return undefined;
+
+    if (trimmed.includes("/")) {
+      const slash = trimmed.indexOf("/");
+      const provider = trimmed.slice(0, slash).trim();
+      const id = trimmed.slice(slash + 1).trim();
+      if (!provider || !id) return undefined;
+      return ctx.modelRegistry.find(provider, id);
+    }
+
+    const matches = ctx.modelRegistry
+      .getAll()
+      .filter((model) => model.id === trimmed);
+
+    if (matches.length === 1) return matches[0];
+
+    if (matches.length > 1) {
+      const provider = (ctx.model as { provider?: string } | undefined)?.provider;
+      if (provider) {
+        const sameProvider = matches.find((model) => model.provider === provider);
+        if (sameProvider) return sameProvider;
+      }
+    }
+
+    return undefined;
+  }
+
+  function resolveModeProfile(config: PlanModeConfig, mode: "plan" | "implement"): ModeProfileConfig | undefined {
+    const defaults = config.defaults ?? {};
+    const specific = config[mode] ?? {};
+
+    const merged: ModeProfileConfig = {
+      model: specific.model ?? defaults.model,
+      thinkingLevel: specific.thinkingLevel ?? defaults.thinkingLevel,
+    };
+
+    if (!merged.model && !merged.thinkingLevel) return undefined;
+    return merged;
+  }
+
+  async function applyModeProfile(ctx: ExtensionContext, mode: "plan" | "implement") {
+    const config = loadPlanModeConfig();
+    const profile = resolveModeProfile(config, mode);
+    if (!profile) return;
+
+    if (profile.model) {
+      const model = resolveModelRef(ctx, profile.model);
+      if (!model) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Plan mode config (${mode}.model/defaults.model) not found: ${profile.model}. Use provider/model-id when ambiguous.`,
+            "warning",
+          );
+        }
+      } else {
+        const changed = await pi.setModel(model as any);
+        if (!changed && ctx.hasUI) {
+          ctx.ui.notify(`Could not switch to configured ${mode} model: ${profile.model}`, "warning");
+        }
+      }
+    }
+
+    if (profile.thinkingLevel) {
+      const normalized = normalizeThinkingLevel(profile.thinkingLevel);
+      if (!normalized) {
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Plan mode config (${mode}.thinkingLevel/defaults.thinkingLevel) invalid: ${profile.thinkingLevel}. Allowed: off, low, medium, high, xhigh.`,
+            "warning",
+          );
+        }
+      } else {
+        pi.setThinkingLevel(normalized as any);
+      }
+    }
+  }
+
+  async function restorePrePlanProfile(ctx: ExtensionContext) {
+    if (modelBeforePlanRef) {
+      const model = resolveModelRef(ctx, modelBeforePlanRef);
+      if (model) {
+        await pi.setModel(model as any);
+      }
+    }
+
+    const normalizedThinking = normalizeThinkingLevel(thinkingBeforePlan);
+    if (normalizedThinking) {
+      pi.setThinkingLevel(normalizedThinking as any);
+    }
+  }
 
   async function enablePlanMode(ctx: ExtensionContext) {
     if (enabled) {
@@ -247,12 +391,16 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       return;
     }
 
+    modelBeforePlanRef = currentModelRef(ctx);
+    thinkingBeforePlan = pi.getThinkingLevel?.();
     previousTools = pi.getActiveTools();
     const planTools = getPlanModeTools(pi, previousTools);
     pi.setActiveTools(planTools);
     enabled = true;
     phase = "clarify";
     lastPromptedPlan = "";
+    resetClarifyTracking();
+    await applyModeProfile(ctx, "plan");
     setPlanStatus(ctx, true, phase);
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode enabled: question-first planning with read-only tools.", "info");
@@ -260,7 +408,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     persistState(pi, { enabled: true, previousTools, phase });
   }
 
-  async function disablePlanMode(ctx: ExtensionContext) {
+  async function disablePlanMode(ctx: ExtensionContext, options?: { restoreModelProfile?: boolean }) {
     if (!enabled) {
       setPlanStatus(ctx, false, phase);
       return;
@@ -271,11 +419,19 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     enabled = false;
     phase = "clarify";
     lastPromptedPlan = "";
+    resetClarifyTracking();
     setPlanStatus(ctx, false, phase);
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode disabled.", "info");
     }
     persistState(pi, { enabled: false, previousTools, phase });
+
+    if (options?.restoreModelProfile !== false) {
+      await restorePrePlanProfile(ctx);
+    }
+
+    modelBeforePlanRef = undefined;
+    thinkingBeforePlan = undefined;
   }
 
   async function planCommand(args: string, ctx: ExtensionCommandContext) {
@@ -307,6 +463,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     } else {
       phase = "clarify";
       lastPromptedPlan = "";
+      resetClarifyTracking();
       setPlanStatus(ctx, true, phase);
       persistState(pi, { enabled: true, previousTools, phase });
     }
@@ -346,6 +503,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
       if (!ctx.hasUI) {
         details.cancelled = true;
+        if (enabled && phase === "clarify") {
+          askQuestionsUsedInClarify = true;
+          askQuestionsCancelledInClarify = true;
+        }
         return {
           content: [{ type: "text", text: "Error: ask_questions requires interactive mode." }],
           details,
@@ -361,6 +522,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
           if (answer === undefined) {
             details.cancelled = true;
+            if (enabled && phase === "clarify") {
+              askQuestionsUsedInClarify = true;
+              askQuestionsCancelledInClarify = true;
+            }
             return {
               content: [{ type: "text", text: "User cancelled the clarification questions." }],
               details,
@@ -380,6 +545,11 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
           });
           break;
         }
+      }
+
+      if (enabled && phase === "clarify") {
+        askQuestionsUsedInClarify = true;
+        askQuestionsCancelledInClarify = false;
       }
 
       const lines = details.answers.map((entry) => `- ${entry.id}: ${entry.answer || "(empty)"}`);
@@ -433,7 +603,9 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (enabled) {
       const baseTools = previousTools.length > 0 ? previousTools : pi.getActiveTools();
       pi.setActiveTools(getPlanModeTools(pi, baseTools));
+      await applyModeProfile(ctx, "plan");
     }
+    resetClarifyTracking();
     setPlanStatus(ctx, enabled, phase);
   });
 
@@ -463,9 +635,42 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (!lastAssistantText) return;
 
     if (phase === "clarify") {
+      if (askQuestionsUsedInClarify && !askQuestionsCancelledInClarify) {
+        phase = "plan";
+        setPlanStatus(ctx, true, phase);
+        persistState(pi, { enabled: true, previousTools, phase });
+        resetClarifyTracking();
+        pi.sendMessage(
+          {
+            customType: "plan-mode-auto-plan",
+            content: "Generate the plan now using the clarification answers already collected.",
+            display: false,
+          },
+          { triggerTurn: true },
+        );
+        return;
+      }
+
+      if (!askQuestionsUsedInClarify && NO_CLARIFY_NEEDED_PATTERN.test(lastAssistantText)) {
+        phase = "plan";
+        setPlanStatus(ctx, true, phase);
+        persistState(pi, { enabled: true, previousTools, phase });
+        resetClarifyTracking();
+        pi.sendMessage(
+          {
+            customType: "plan-mode-auto-plan",
+            content: "No clarifying questions were needed. Generate the full plan now.",
+            display: false,
+          },
+          { triggerTurn: true },
+        );
+        return;
+      }
+
       phase = "wait_answers";
       setPlanStatus(ctx, true, phase);
       persistState(pi, { enabled: true, previousTools, phase });
+      resetClarifyTracking();
       ctx.ui.notify("Reply with /answer <responses> (or a normal message), then I will generate the plan.", "info");
       return;
     }
@@ -486,7 +691,8 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     ]);
 
     if (choice?.startsWith("Implement")) {
-      await disablePlanMode(ctx);
+      await disablePlanMode(ctx, { restoreModelProfile: false });
+      await applyModeProfile(ctx, "implement");
       pi.sendMessage(
         { customType: "plan-mode-implement", content: "Implement the approved plan now.", display: true },
         { triggerTurn: true },
@@ -504,12 +710,17 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event) => {
-    if (!enabled || event.toolName !== "bash") return;
+    if (!enabled) return;
+
+    if (event.toolName !== "bash") return;
+
     const command = String(event.input.command || "");
-    if (isSafePlanCommand(command)) return;
-    return {
-      block: true,
-      reason: `Plan mode only allows read-only bash commands. Blocked: ${command}`,
-    };
+    if (!isSafePlanCommand(command)) {
+      return {
+        block: true,
+        reason: `Plan mode only allows read-only bash commands. Blocked: ${command}`,
+      };
+    }
+
   });
 }

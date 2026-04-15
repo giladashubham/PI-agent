@@ -77,6 +77,42 @@ Override with:
 PI_AGENT_DIR=/path/to/.pi/agent ./install.sh
 ```
 
+## Plan mode model/thinking config
+
+Plan mode supports per-phase model + thinking configuration via:
+
+- `~/.pi/agent/plan-mode.json`
+
+Example:
+
+```json
+{
+  "defaults": {
+    "thinkingLevel": "high"
+  },
+  "plan": {
+    "model": "openai/gpt-5.4"
+  },
+  "implement": {
+    "model": "openai/gpt-codex-5.3",
+    "thinkingLevel": "medium"
+  }
+}
+```
+
+Resolution order for each phase (`plan` or `implement`):
+1. phase-specific value (`plan.*` or `implement.*`)
+2. `defaults.*`
+3. keep current session value
+
+Allowed `thinkingLevel` values:
+- `off`, `low`, `medium`, `high`, `xhigh`
+
+Notes:
+- Use `provider/model-id` for model names when possible.
+- On manual `/plan off`, previous model/thinking (before plan mode) is restored.
+- When selecting **Implement now** from plan mode, implement profile is applied.
+
 ## Notes
 
 - Pi extension entrypoints are declared in root `package.json` under `pi.extensions`.
