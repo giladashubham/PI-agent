@@ -95,7 +95,7 @@ export interface WebFetchExtension {
 	/**
 	 * URL glob patterns to match against hostname + pathname.
 	 * Uses picomatch syntax: `*` matches a single segment, `**` matches multiple.
-	 * @example ["github.com/*/*/blob/**", "docs.google.com/**"]
+	 * @example ["github.com/<owner>/<repo>/blob/**", "docs.google.com/**"]
 	 */
 	matches: string[];
 
