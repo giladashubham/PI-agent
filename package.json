@@ -1,0 +1,34 @@
+{
+  "name": "pi-custom-bundle-shubham",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Custom Pi package bundle with extensions, skills, themes, and web_fetch",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/core/custom-core-ui.ts",
+      "./extensions/modes/question-first-plan-mode.ts",
+      "./extensions/policies/karpathy-guidelines.ts",
+      "./extensions/providers/opencode-free-models.ts",
+      "./tools/web-fetch/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "dependencies": {
+    "picomatch": "^4.0.3",
+    "puppeteer": "^24.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  }
+}
