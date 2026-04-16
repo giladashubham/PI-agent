@@ -65,11 +65,17 @@ function normalize(p) {
   }
 }
 
-let settings = {};
+let settings;
 try {
   settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-} catch {
-  settings = {};
+} catch (error) {
+  console.error(`[uninstall] Failed to parse ${settingsPath}: ${error.message}`);
+  process.exit(1);
+}
+
+if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+  console.error(`[uninstall] Expected ${settingsPath} to contain a JSON object.`);
+  process.exit(1);
 }
 
 const packages = Array.isArray(settings.packages) ? settings.packages : [];

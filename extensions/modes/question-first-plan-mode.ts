@@ -27,6 +27,8 @@ interface PlanModeState {
   enabled: boolean;
   previousTools?: string[];
   phase?: PlanPhase;
+  modelBeforePlanRef?: string;
+  thinkingBeforePlan?: string;
 }
 
 interface ModeProfileConfig {
@@ -186,12 +188,7 @@ function setPlanStatus(ctx: ExtensionContext, enabled: boolean, phase: PlanPhase
     return;
   }
 
-  const text =
-    phase === "clarify"
-      ? "plan: clarify"
-      : phase === "wait_answers"
-        ? "plan: waiting /answer"
-        : "plan";
+  const text = phase === "clarify" ? "plan: clarify" : phase === "wait_answers" ? "plan: waiting /answer" : "plan";
   ctx.ui.setStatus("question-first-plan-mode", text);
 }
 
@@ -275,6 +272,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
   let modelBeforePlanRef: string | undefined;
   let thinkingBeforePlan: string | undefined;
 
+  function persistCurrentState() {
+    persistState(pi, { enabled, previousTools, phase, modelBeforePlanRef, thinkingBeforePlan });
+  }
+
   function resetClarifyTracking() {
     askQuestionsUsedInClarify = false;
     askQuestionsCancelledInClarify = false;
@@ -304,9 +305,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       return ctx.modelRegistry.find(provider, id);
     }
 
-    const matches = ctx.modelRegistry
-      .getAll()
-      .filter((model) => model.id === trimmed);
+    const matches = ctx.modelRegistry.getAll().filter((model) => model.id === trimmed);
 
     if (matches.length === 1) return matches[0];
 
@@ -405,7 +404,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode enabled: question-first planning with read-only tools.", "info");
     }
-    persistState(pi, { enabled: true, previousTools, phase });
+    persistCurrentState();
   }
 
   async function disablePlanMode(ctx: ExtensionContext, options?: { restoreModelProfile?: boolean }) {
@@ -424,7 +423,6 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode disabled.", "info");
     }
-    persistState(pi, { enabled: false, previousTools, phase });
 
     if (options?.restoreModelProfile !== false) {
       await restorePrePlanProfile(ctx);
@@ -432,6 +430,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
     modelBeforePlanRef = undefined;
     thinkingBeforePlan = undefined;
+    persistCurrentState();
   }
 
   async function planCommand(args: string, ctx: ExtensionCommandContext) {
@@ -465,7 +464,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       lastPromptedPlan = "";
       resetClarifyTracking();
       setPlanStatus(ctx, true, phase);
-      persistState(pi, { enabled: true, previousTools, phase });
+      persistCurrentState();
     }
     pi.sendUserMessage(raw);
   }
@@ -473,8 +472,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
   pi.registerTool({
     name: "ask_questions",
     label: "Ask Questions",
-    description: "Ask the user one or more clarifying questions and collect free-text answers. Use this when key requirements are missing and you should not assume.",
-    promptSnippet: "Ask the user clarifying questions before planning or implementing when important information is missing.",
+    description:
+      "Ask the user one or more clarifying questions and collect free-text answers. Use this when key requirements are missing and you should not assume.",
+    promptSnippet:
+      "Ask the user clarifying questions before planning or implementing when important information is missing.",
     promptGuidelines: [
       "Use ask_questions instead of silently assuming requirements when ambiguity materially affects the work.",
       "Ask only the minimum useful set of questions, usually 1-5.",
@@ -488,8 +489,12 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
           question: Type.String({ description: "The exact question to ask the user" }),
           placeholder: Type.Optional(Type.String({ description: "Optional placeholder shown in the input box" })),
           defaultAnswer: Type.Optional(Type.String({ description: "Optional default answer to prefill" })),
-          multiline: Type.Optional(Type.Boolean({ description: "Use a multiline editor instead of a single-line input" })),
-          required: Type.Optional(Type.Boolean({ description: "Whether an empty answer is disallowed. Default true." })),
+          multiline: Type.Optional(
+            Type.Boolean({ description: "Use a multiline editor instead of a single-line input" }),
+          ),
+          required: Type.Optional(
+            Type.Boolean({ description: "Whether an empty answer is disallowed. Default true." }),
+          ),
         }),
         { minItems: 1, maxItems: 8, description: "Questions to ask the user" },
       ),
@@ -561,7 +566,8 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     renderCall(args, theme) {
       const count = Array.isArray(args.questions) ? args.questions.length : 0;
       return new Text(
-        theme.fg("toolTitle", theme.bold("ask_questions ")) + theme.fg("muted", `${count} question${count === 1 ? "" : "s"}`),
+        theme.fg("toolTitle", theme.bold("ask_questions ")) +
+          theme.fg("muted", `${count} question${count === 1 ? "" : "s"}`),
         0,
         0,
       );
@@ -575,7 +581,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       if (details.cancelled) {
         return new Text(theme.fg("warning", "Cancelled"), 0, 0);
       }
-      const lines = details.answers.map((entry) => `${theme.fg("success", "✓ ")}${theme.fg("accent", entry.id)}: ${entry.answer || theme.fg("dim", "(empty)")}`);
+      const lines = details.answers.map(
+        (entry) =>
+          `${theme.fg("success", "✓ ")}${theme.fg("accent", entry.id)}: ${entry.answer || theme.fg("dim", "(empty)")}`,
+      );
       return new Text(lines.join("\n"), 0, 0);
     },
   });
@@ -599,6 +608,8 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       enabled = restored.enabled;
       previousTools = restored.previousTools ?? previousTools;
       phase = restored.phase ?? phase;
+      modelBeforePlanRef = restored.modelBeforePlanRef;
+      thinkingBeforePlan = restored.thinkingBeforePlan;
     }
     if (enabled) {
       const baseTools = previousTools.length > 0 ? previousTools : pi.getActiveTools();
@@ -615,7 +626,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (phase === "wait_answers") {
       phase = "plan";
       lastPromptedPlan = "";
-      persistState(pi, { enabled: true, previousTools, phase });
+      persistCurrentState();
     }
 
     let prompt = (event.systemPrompt || "") + PLAN_MODE_PROMPT;
@@ -638,7 +649,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       if (askQuestionsUsedInClarify && !askQuestionsCancelledInClarify) {
         phase = "plan";
         setPlanStatus(ctx, true, phase);
-        persistState(pi, { enabled: true, previousTools, phase });
+        persistCurrentState();
         resetClarifyTracking();
         pi.sendMessage(
           {
@@ -654,7 +665,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       if (!askQuestionsUsedInClarify && NO_CLARIFY_NEEDED_PATTERN.test(lastAssistantText)) {
         phase = "plan";
         setPlanStatus(ctx, true, phase);
-        persistState(pi, { enabled: true, previousTools, phase });
+        persistCurrentState();
         resetClarifyTracking();
         pi.sendMessage(
           {
@@ -669,7 +680,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
       phase = "wait_answers";
       setPlanStatus(ctx, true, phase);
-      persistState(pi, { enabled: true, previousTools, phase });
+      persistCurrentState();
       resetClarifyTracking();
       ctx.ui.notify("Reply with /answer <responses> (or a normal message), then I will generate the plan.", "info");
       return;
@@ -721,6 +732,5 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
         reason: `Plan mode only allows read-only bash commands. Blocked: ${command}`,
       };
     }
-
   });
 }

@@ -13,10 +13,7 @@ const DEFAULT_BANNER = `                             ▄▄
 
 const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
 const SETTINGS_PATH = join(PI_AGENT_DIR, "settings.json");
-const BANNER_PATHS = [
-  join(PI_AGENT_DIR, "agent-banner.txt"),
-  join(homedir(), "Desktop", "agent.txt"),
-];
+const BANNER_PATHS = [join(PI_AGENT_DIR, "agent-banner.txt"), join(homedir(), "Desktop", "agent.txt")];
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
 
 function loadBannerArt(): string {
@@ -86,11 +83,7 @@ function shortDir(cwd: string): string {
 
 function thinkingIndicator(level: string | undefined, theme: any): string {
   const value = level || "off";
-  const color = value === "off"
-    ? "dim"
-    : value === "high" || value === "xhigh"
-      ? "warning"
-      : "accent";
+  const color = value === "off" ? "dim" : value === "high" || value === "xhigh" ? "warning" : "accent";
   return theme.fg("dim", "thinking: ") + theme.fg(color, theme.bold(value));
 }
 
@@ -123,22 +116,13 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
       let usageText = "–";
       if (usage?.percent != null) {
         const percent = `${Math.round(usage.percent)}%`;
-        usageText = contextWindow > 0
-          ? `${percent} / ${formatTokens(contextWindow)}`
-          : percent;
+        usageText = contextWindow > 0 ? `${percent} / ${formatTokens(contextWindow)}` : percent;
       }
 
-      const planBadge = isPlanModeActive(ctx)
-        ? theme.fg("warning", theme.bold(" PLAN"))
-        : "";
+      const planBadge = isPlanModeActive(ctx) ? theme.fg("warning", theme.bold(" PLAN")) : "";
       const sep = theme.fg("dim", " | ");
       const left =
-        " " +
-        theme.fg("accent", theme.bold(model)) +
-        sep +
-        theme.fg("dim", usageText) +
-        sep +
-        theme.fg("dim", dir);
+        " " + theme.fg("accent", theme.bold(model)) + sep + theme.fg("dim", usageText) + sep + theme.fg("dim", dir);
       const right = thinkingIndicator(pi.getThinkingLevel?.(), theme) + planBadge + " ";
       const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
       return [truncateToWidth(left + " ".repeat(gap) + right, width, "")];
@@ -171,7 +155,11 @@ function persistTheme(name: string) {
   }
 }
 
-function showThemeSwatch(ctx: ExtensionContext, clearPrevious: () => void, rememberTimer: (timer: ReturnType<typeof setTimeout> | null) => void) {
+function showThemeSwatch(
+  ctx: ExtensionContext,
+  clearPrevious: () => void,
+  rememberTimer: (timer: ReturnType<typeof setTimeout> | null) => void,
+) {
   if (!ctx.hasUI) return;
 
   clearPrevious();

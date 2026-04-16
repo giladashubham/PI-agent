@@ -6,15 +6,15 @@ A [pi](https://github.com/badlogic/pi-mono) extension that gives your agent a pr
 
 Claude Code's WebFetch uses Turndown to convert HTML to markdown — a simple regex-based converter that can't handle JavaScript-rendered pages, doesn't strip boilerplate well, and has no extensibility. pi-web-fetch improves on this in several ways:
 
-| | Claude Code WebFetch | pi-web-fetch |
-|---|---|---|
-| **Rendering** | Static HTTP fetch | Headless Chrome (handles SPAs, JS-rendered content) |
-| **Extraction** | Turndown (regex HTML→md) | [trafilatura](https://trafilatura.readthedocs.io/) (ML-based boilerplate removal) |
-| **Raw content** | Never — prompt is mandatory | Optional — omit prompt to get full markdown |
-| **Batch fetching** | One URL at a time | Up to 10 URLs concurrently with per-URL progress |
-| **Concurrency** | Sequential | Browser pool with 6 parallel tabs |
-| **Extensibility** | None | Hook system for site-specific handling |
-| **Smart redirects** | Generic | Context-aware (e.g. GitHub URLs → `gh` CLI suggestions) |
+|                     | Claude Code WebFetch        | pi-web-fetch                                                                      |
+| ------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| **Rendering**       | Static HTTP fetch           | Headless Chrome (handles SPAs, JS-rendered content)                               |
+| **Extraction**      | Turndown (regex HTML→md)    | [trafilatura](https://trafilatura.readthedocs.io/) (ML-based boilerplate removal) |
+| **Raw content**     | Never — prompt is mandatory | Optional — omit prompt to get full markdown                                       |
+| **Batch fetching**  | One URL at a time           | Up to 10 URLs concurrently with per-URL progress                                  |
+| **Concurrency**     | Sequential                  | Browser pool with 6 parallel tabs                                                 |
+| **Extensibility**   | None                        | Hook system for site-specific handling                                            |
+| **Smart redirects** | Generic                     | Context-aware (e.g. GitHub URLs → `gh` CLI suggestions)                           |
 
 ## Features
 
@@ -56,6 +56,7 @@ npm install
 ```
 
 > **Note:** `npm install` will download puppeteer's bundled Chromium (~300MB). If you already have Chrome/Chromium installed, you can set `PUPPETEER_EXECUTABLE_PATH` to skip the download:
+>
 > ```bash
 > export PUPPETEER_EXECUTABLE_PATH=/path/to/chrome
 > ```
@@ -68,9 +69,7 @@ Add the package to your pi settings (`~/.pi/agent/settings.json`):
 
 ```json
 {
-  "extensions": [
-    "pi-web-fetch"
-  ]
+  "extensions": ["pi-web-fetch"]
 }
 ```
 
@@ -78,9 +77,7 @@ Or point to a local checkout:
 
 ```json
 {
-  "extensions": [
-    "/path/to/pi-web-fetch"
-  ]
+  "extensions": ["/path/to/pi-web-fetch"]
 }
 ```
 
@@ -97,15 +94,19 @@ The extension registers a `web_fetch` tool. The LLM will use it automatically wh
 ### Single URL
 
 **With a prompt (recommended):**
+
 > Fetch https://docs.example.com/api and tell me what authentication methods are supported.
 
 **Without a prompt (full content):**
+
 > Fetch the content of https://example.com/changelog
 
 ### Batch fetching
 
 Fetch multiple pages concurrently by asking for several URLs at once:
+
 > Read these three pages and compare their approaches to error handling:
+>
 > - https://docs.python.org/3/tutorial/errors.html
 > - https://go.dev/blog/error-handling-and-go
 > - https://doc.rust-lang.org/book/ch09-00-error-handling.html
@@ -175,15 +176,17 @@ Create `~/.pi/agent/web-fetch.json` to override defaults:
 }
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `model` | Current session model | Model for LLM content processing |
-| `thinkingLevel` | Current session thinking level | Thinking level for the sub-agent |
-| `extensionsDir` | `~/.pi/extensions/web-fetch/` | Directory for local extensions |
+| Key             | Default                        | Description                                                             |
+| --------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| `model`         | Current session model          | Model for LLM content processing                                        |
+| `thinkingLevel` | Current session thinking level | Thinking level for the sub-agent                                        |
+| `extensionsDir` | `~/.pi/extensions/web-fetch/`  | Directory for local extensions (`~` is expanded to your home directory) |
 
 Without a config file, the extension uses whatever model and thinking level the current session is using.
 
 ## Architecture
+
+### Runtime flow
 
 ```
 web_fetch(url, prompt?)
@@ -191,7 +194,7 @@ web_fetch(url, prompt?)
   ├─ URL validation & normalization (http→https, scheme check)
   ├─ Cache check (15-min TTL)
   ├─ Extension: beforeFetch hook
-  ├─ Browser pool → Puppeteer page (networkidle2, 30s timeout)
+  ├─ Browser pool → Puppeteer page (networkidle2, 10s default timeout, configurable)
   ├─ Cross-host redirect detection
   ├─ Extension: afterFetch hook
   ├─ trafilatura extraction (HTML → clean markdown)
@@ -204,6 +207,18 @@ web_fetch(url, prompt?)
 ```
 
 For batch mode, each URL runs through this pipeline independently with its own browser tab. The browser pool (6 tabs max, 60s idle timeout) provides backpressure.
+
+### Module layout
+
+- `index.ts` — extension entrypoint and tool registration
+- `pipeline.ts` — single-page and batch execution pipeline
+- `render.ts` — tool call/result and batch status rendering
+- `model-selection.ts` — sub-agent model selection logic
+- `runtime.ts` — browser fetch, extraction, sub-agent runtime helpers
+- `cache.ts` — TTL cache implementation
+- `extension-loader.ts` — built-in/local/event-bus extension loading
+- `registry.ts` — extension match priority and URL pattern matching
+- `url-utils.ts`, `path-utils.ts`, `batch-format.ts`, `batch-status.ts` — focused utility modules
 
 ## License
 

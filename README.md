@@ -24,14 +24,24 @@ This repo is organized for maintainability (similar high-level style to larger P
 │   └── web-fetch/
 ├── skills/
 ├── themes/
+├── tests/
 ├── docs/
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   ├── CONVENTIONS.md
+│   └── RELEASE.md
+├── CONTRIBUTING.md
+├── SECURITY.md
 ├── install.sh
 ├── uninstall.sh
 └── package.json
 ```
 
-See `docs/ARCHITECTURE.md` for ownership and path mapping.
+See:
+
+- `docs/ARCHITECTURE.md` for runtime architecture and flow
+- `docs/CONVENTIONS.md` for placement/naming/testing standards
+- `CONTRIBUTING.md` for local development workflow
+- `docs/RELEASE.md` for versioning and release checklist
 
 ## Install
 
@@ -40,6 +50,7 @@ See `docs/ARCHITECTURE.md` for ownership and path mapping.
 ```
 
 This will:
+
 - install npm dependencies
 - register this repo path in `~/.pi/agent/settings.json` under `packages`
 
@@ -101,17 +112,30 @@ Example:
 ```
 
 Resolution order for each phase (`plan` or `implement`):
+
 1. phase-specific value (`plan.*` or `implement.*`)
 2. `defaults.*`
 3. keep current session value
 
 Allowed `thinkingLevel` values:
+
 - `off`, `low`, `medium`, `high`, `xhigh`
 
 Notes:
+
 - Use `provider/model-id` for model names when possible.
 - On manual `/plan off`, previous model/thinking (before plan mode) is restored.
 - When selecting **Implement now** from plan mode, implement profile is applied.
+
+## Development quality gates
+
+```bash
+npm run typecheck
+npm run lint
+npm run test:unit
+npm run test:smoke
+npm run test:ci
+```
 
 ## Notes
 

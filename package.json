@@ -7,6 +7,16 @@
   "keywords": [
     "pi-package"
   ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:unit": "vitest run",
+    "test:smoke": "bash ./tests/smoke.sh",
+    "test": "npm run test:unit && npm run test:smoke",
+    "test:ci": "npm run typecheck && npm run lint && npm run test"
+  },
   "pi": {
     "extensions": [
       "./extensions/core/custom-core-ui.ts",
@@ -25,6 +35,15 @@
   "dependencies": {
     "picomatch": "^4.0.3",
     "puppeteer": "^24.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.26.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.1",
+    "vitest": "^3.1.2"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",

@@ -19,6 +19,9 @@ Usage: ./install.sh [--dry-run]
 Installs this folder as a local Pi package.
 - Does NOT copy extensions/skills/themes into ~/.pi/agent
 - Only registers this package path in ~/.pi/agent/settings.json
+
+Environment:
+- PI_SKIP_NPM_INSTALL=1   Skip npm install step
 USAGE
       exit 0
       ;;
@@ -52,7 +55,9 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-if command -v npm >/dev/null 2>&1; then
+if [ "${PI_SKIP_NPM_INSTALL:-0}" = "1" ]; then
+  log "Skipping npm install (PI_SKIP_NPM_INSTALL=1)"
+elif command -v npm >/dev/null 2>&1; then
   log "Installing npm dependencies"
   (cd "$SCRIPT_DIR" && npm install --omit=dev)
 else
@@ -70,11 +75,17 @@ const fs = require('node:fs');
 const packagePath = process.env.PACKAGE_PATH;
 const settingsPath = process.env.SETTINGS_PATH;
 
-let settings = {};
+let settings;
 try {
   settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-} catch {
-  settings = {};
+} catch (error) {
+  console.error(`[install] Failed to parse ${settingsPath}: ${error.message}`);
+  process.exit(1);
+}
+
+if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+  console.error(`[install] Expected ${settingsPath} to contain a JSON object.`);
+  process.exit(1);
 }
 
 if (!Array.isArray(settings.packages)) settings.packages = [];
