@@ -79,7 +79,8 @@ Current phase: clarification.
 For this turn:
 1) If the task needs repo context, inspect the codebase with read-only tools.
 2) Ask clarifying questions only if still needed.
-Do not provide the final plan in this turn.
+3) If you use ask_questions and receive answers in this same turn, immediately create the plan now with write_plan.
+Do not ask for permission to proceed once clarifications are complete.
 `;
 
 const PLAN_FROM_ANSWERS_PROMPT = `
@@ -298,15 +299,23 @@ class PlanOverlayComponent {
   private title: string;
   private filePath: string | undefined;
   private scrollOffset = 0;
-  private allLines: string[] = [];
+  private maxScrollOffset = 0;
   private lastWidth?: number;
   private done: () => void;
   private requestRenderFn: (() => void) | undefined;
+  private getTerminalRows: () => number;
 
-  constructor(title: string, markdownContent: string, filePath: string | undefined, done: () => void) {
+  constructor(
+    title: string,
+    markdownContent: string,
+    filePath: string | undefined,
+    done: () => void,
+    getTerminalRows: () => number,
+  ) {
     this.title = title;
     this.filePath = filePath;
     this.done = done;
+    this.getTerminalRows = getTerminalRows;
     this.md = new Markdown(markdownContent, 1, 1, getMarkdownTheme());
   }
 
@@ -316,21 +325,29 @@ class PlanOverlayComponent {
       this.scrollOffset = 0;
     }
 
-    const header = [
-      this.title,
-      "─".repeat(width),
-    ];
+    const header = [this.title, "─".repeat(width)];
+    const mdLines = this.md.render(Math.max(1, width - 2));
 
-    const mdLines = this.md.render(width - 2);
+    const overlayHeight = Math.max(8, Math.floor(this.getTerminalRows() * 0.9));
+    const fixedFooterLineCount = 3;
+    const viewportHeight = Math.max(1, overlayHeight - header.length - fixedFooterLineCount);
 
+    this.maxScrollOffset = Math.max(0, mdLines.length - viewportHeight);
+    this.scrollOffset = Math.min(this.maxScrollOffset, Math.max(0, this.scrollOffset));
+
+    const start = this.scrollOffset;
+    const end = Math.min(mdLines.length, start + viewportHeight);
+    const visibleMdLines = mdLines.slice(start, end);
+
+    const rangeStart = mdLines.length === 0 ? 0 : start + 1;
+    const rangeEnd = mdLines.length === 0 ? 0 : end;
     const footer = [
       "─".repeat(width),
-      this.filePath ? `📄 ${this.filePath}` : "",
+      this.filePath ? `📄 ${this.filePath}  (${rangeStart}-${rangeEnd}/${mdLines.length})` : `(${rangeStart}-${rangeEnd}/${mdLines.length})`,
       "↑/↓ scroll  ·  PgUp/PgDn  ·  Esc close",
     ];
 
-    this.allLines = [...header, ...mdLines, ...footer];
-    return this.allLines;
+    return [...header, ...visibleMdLines, ...footer];
   }
 
   handleInput(data: string): void {
@@ -344,7 +361,7 @@ class PlanOverlayComponent {
       return;
     }
     if (data === "\x1b[B" || data === "j") {
-      this.scrollOffset++;
+      this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 1);
       this.requestRenderFn?.();
       return;
     }
@@ -354,7 +371,7 @@ class PlanOverlayComponent {
       return;
     }
     if (data === "\x1b[6~") {
-      this.scrollOffset += 10;
+      this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 10);
       this.requestRenderFn?.();
       return;
     }
@@ -368,17 +385,13 @@ class PlanOverlayComponent {
   setRequestRender(fn: () => void): void {
     this.requestRenderFn = fn;
   }
-
-  getScrollOffset(): number {
-    return this.scrollOffset;
-  }
 }
 
 async function showPlanOverlay(ctx: ExtensionContext, title: string, markdownContent: string, filePath?: string): Promise<void> {
   if (!ctx.hasUI) return;
 
-  await ctx.ui.custom<void>((tui, theme, keybindings, done) => {
-    const component = new PlanOverlayComponent(title, markdownContent, filePath, done);
+  await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
+    const component = new PlanOverlayComponent(title, markdownContent, filePath, done, () => tui.terminal.rows);
     component.setRequestRender(() => tui.requestRender());
     return component;
   }, { overlay: true, overlayOptions: { width: "90%", maxHeight: "90%", anchor: "center" } });
@@ -856,44 +869,50 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (!lastAssistantText) return;
 
     if (phase === "clarify") {
+      const assistantAlreadyPlanned = Boolean(currentPlanPath) || extractPlanSteps(lastAssistantText).length > 0;
+
       if (askQuestionsUsedInClarify && !askQuestionsCancelledInClarify) {
         phase = "plan";
         setPlanStatus(ctx, true, phase, currentPlanPath);
         persistCurrentState();
         resetClarifyTracking();
-        pi.sendMessage(
-          {
-            customType: "plan-mode-auto-plan",
-            content: "Generate the plan now using the clarification answers already collected. Use the write_plan tool to save it.",
-            display: false,
-          },
-          { triggerTurn: true },
-        );
-        return;
-      }
 
-      if (!askQuestionsUsedInClarify && NO_CLARIFY_NEEDED_PATTERN.test(lastAssistantText)) {
+        if (!assistantAlreadyPlanned) {
+          pi.sendMessage(
+            {
+              customType: "plan-mode-auto-plan",
+              content: "Generate the plan now using the clarification answers already collected. Use the write_plan tool to save it.",
+              display: false,
+            },
+            { triggerTurn: true },
+          );
+          return;
+        }
+      } else if (!askQuestionsUsedInClarify && NO_CLARIFY_NEEDED_PATTERN.test(lastAssistantText)) {
         phase = "plan";
         setPlanStatus(ctx, true, phase, currentPlanPath);
         persistCurrentState();
         resetClarifyTracking();
-        pi.sendMessage(
-          {
-            customType: "plan-mode-auto-plan",
-            content: "No clarifying questions were needed. Generate the full plan now using the write_plan tool.",
-            display: false,
-          },
-          { triggerTurn: true },
-        );
+
+        if (!assistantAlreadyPlanned) {
+          pi.sendMessage(
+            {
+              customType: "plan-mode-auto-plan",
+              content: "No clarifying questions were needed. Generate the full plan now using the write_plan tool.",
+              display: false,
+            },
+            { triggerTurn: true },
+          );
+          return;
+        }
+      } else {
+        phase = "wait_answers";
+        setPlanStatus(ctx, true, phase, currentPlanPath);
+        persistCurrentState();
+        resetClarifyTracking();
+        ctx.ui.notify("Reply with /answer <responses> (or a normal message), then I will generate the plan.", "info");
         return;
       }
-
-      phase = "wait_answers";
-      setPlanStatus(ctx, true, phase, currentPlanPath);
-      persistCurrentState();
-      resetClarifyTracking();
-      ctx.ui.notify("Reply with /answer <responses> (or a normal message), then I will generate the plan.", "info");
-      return;
     }
 
     if (phase !== "plan") return;
