@@ -5,7 +5,7 @@ import { Markdown, Text } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { slugify, datePrefix, writePlanArtifact, readPlanArtifact, updatePlanStatus } from "./plan-artifact.js";
+import { writePlanArtifact, readPlanArtifact, updatePlanStatus } from "./plan-artifact.js";
 
 interface AskQuestionItem {
   id: string;
@@ -206,7 +206,7 @@ function loadPlanModeConfig(): PlanModeConfig {
   return (legacy as PlanModeConfig | undefined) ?? {};
 }
 
-function setPlanStatus(ctx: ExtensionContext, enabled: boolean, phase: PlanPhase, planPath?: string) {
+function setPlanStatus(ctx: ExtensionContext, enabled: boolean, phase: PlanPhase, _planPath?: string) {
   if (!ctx.hasUI) return;
   if (!enabled) {
     ctx.ui.setStatus("question-first-plan-mode", undefined);
