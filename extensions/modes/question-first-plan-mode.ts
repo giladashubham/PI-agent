@@ -1,9 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { Text } from "@mariozechner/pi-tui";
+import { Markdown, Text } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { slugify, datePrefix, writePlanArtifact, readPlanArtifact, updatePlanStatus } from "./plan-artifact.js";
 
 interface AskQuestionItem {
   id: string;
@@ -29,6 +31,7 @@ interface PlanModeState {
   phase?: PlanPhase;
   modelBeforePlanRef?: string;
   thinkingBeforePlan?: string;
+  planPath?: string;
 }
 
 interface ModeProfileConfig {
@@ -41,6 +44,8 @@ interface PlanModeConfig {
   plan?: ModeProfileConfig;
   implement?: ModeProfileConfig;
 }
+
+const PLAN_STATE_ENTRY = "question-first-plan-mode";
 
 const PLAN_MODE_PROMPT = `
 
@@ -57,13 +62,15 @@ Rules:
 - Questions should be direct, neutral, and non-leading.
 - If no clarifications are needed, explicitly say: "No clarifying questions needed."
 
-After you have enough information, respond with this structure:
+After you have enough information, use the write_plan tool to save your plan as a markdown artifact. Include:
 1. Objective
 2. Clarifications / constraints
 3. Assumptions (only if unavoidable)
-4. Plan (numbered)
+4. Plan (numbered steps)
 5. Validation / success criteria
 6. Risks or follow-ups
+
+The write_plan tool will save the plan to a markdown file and display it for review. Always use write_plan instead of writing the plan in your response text.
 `;
 
 const CLARIFY_FIRST_PROMPT = `
@@ -80,44 +87,16 @@ const PLAN_FROM_ANSWERS_PROMPT = `
 Current phase: planning.
 Use the latest codebase context and the user's clarification answers to produce the full plan now.
 Do not ask more clarifying questions in this turn.
-Include a "Plan:" header followed by numbered steps.
+Use the write_plan tool to save your plan as a markdown file with a "Plan:" header followed by numbered steps.
 `;
 
 const CUSTOM_CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-agent-custom.json");
 const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
 const PLAN_MODE_LEGACY_CONFIG_PATH = join(homedir(), ".pi", "agent", "plan-mode.json");
 const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
-
-function readJsonObject(path: string): Record<string, unknown> | undefined {
-  try {
-    if (!existsSync(path)) return undefined;
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function loadPlanModeConfig(): PlanModeConfig {
-  const customConfig = readJsonObject(CUSTOM_CONFIG_PATH);
-  const customPlanMode = customConfig?.planMode;
-  if (customPlanMode && typeof customPlanMode === "object" && !Array.isArray(customPlanMode)) {
-    return customPlanMode as PlanModeConfig;
-  }
-
-  const settings = readJsonObject(SETTINGS_PATH);
-  const settingsConfig = settings?.planMode;
-  if (settingsConfig && typeof settingsConfig === "object" && !Array.isArray(settingsConfig)) {
-    return settingsConfig as PlanModeConfig;
-  }
-
-  const legacy = readJsonObject(PLAN_MODE_LEGACY_CONFIG_PATH);
-  return (legacy as PlanModeConfig | undefined) ?? {};
-}
-
-const PLAN_STATE_ENTRY = "question-first-plan-mode";
-const PLAN_TOOL_WHITELIST = new Set(["read", "bash", "grep", "find", "ls", "web_fetch", "ask_questions"]);
+const PLAN_TOOL_WHITELIST = new Set(["read", "bash", "grep", "find", "ls", "web_fetch", "ask_questions", "write_plan"]);
 const NO_CLARIFY_NEEDED_PATTERN = /no clarifying questions needed/i;
+
 const DANGEROUS_BASH_PATTERNS = [
   /\brm\b/i,
   /\brmdir\b/i,
@@ -200,15 +179,42 @@ function isSafePlanCommand(command: string): boolean {
   return SAFE_BASH_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-function setPlanStatus(ctx: ExtensionContext, enabled: boolean, phase: PlanPhase) {
+function readJsonObject(path: string): Record<string, unknown> | undefined {
+  try {
+    if (!existsSync(path)) return undefined;
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function loadPlanModeConfig(): PlanModeConfig {
+  const customConfig = readJsonObject(CUSTOM_CONFIG_PATH);
+  const customPlanMode = customConfig?.planMode;
+  if (customPlanMode && typeof customPlanMode === "object" && !Array.isArray(customPlanMode)) {
+    return customPlanMode as PlanModeConfig;
+  }
+
+  const settings = readJsonObject(SETTINGS_PATH);
+  const settingsConfig = settings?.planMode;
+  if (settingsConfig && typeof settingsConfig === "object" && !Array.isArray(settingsConfig)) {
+    return settingsConfig as PlanModeConfig;
+  }
+
+  const legacy = readJsonObject(PLAN_MODE_LEGACY_CONFIG_PATH);
+  return (legacy as PlanModeConfig | undefined) ?? {};
+}
+
+function setPlanStatus(ctx: ExtensionContext, enabled: boolean, phase: PlanPhase, planPath?: string) {
   if (!ctx.hasUI) return;
   if (!enabled) {
     ctx.ui.setStatus("question-first-plan-mode", undefined);
     return;
   }
 
-  const text = phase === "clarify" ? "plan: clarify" : phase === "wait_answers" ? "plan: waiting /answer" : "plan";
-  ctx.ui.setStatus("question-first-plan-mode", text);
+  const phaseText = phase === "clarify" ? "plan: clarify" : phase === "wait_answers" ? "plan: waiting /answer" : "plan";
+  ctx.ui.setStatus("question-first-plan-mode", phaseText);
 }
 
 function persistState(pi: ExtensionAPI, state: PlanModeState) {
@@ -231,6 +237,9 @@ function getPlanModeTools(pi: ExtensionAPI, previousTools: string[]): string[] {
   const result = previousTools.filter((name) => PLAN_TOOL_WHITELIST.has(name) && available.has(name));
   if (available.has("ask_questions") && !result.includes("ask_questions")) {
     result.push("ask_questions");
+  }
+  if (available.has("write_plan") && !result.includes("write_plan")) {
+    result.push("write_plan");
   }
   return result;
 }
@@ -281,6 +290,100 @@ function planFingerprint(steps: string[]): string {
   return steps.map((step) => step.toLowerCase().replace(/\s+/g, " ").trim()).join("|");
 }
 
+/**
+ * Plan overlay component — scrollable Markdown viewer with Escape to close.
+ */
+class PlanOverlayComponent {
+  private md: Markdown;
+  private title: string;
+  private filePath: string | undefined;
+  private scrollOffset = 0;
+  private allLines: string[] = [];
+  private lastWidth?: number;
+  private done: () => void;
+  private requestRenderFn: (() => void) | undefined;
+
+  constructor(title: string, markdownContent: string, filePath: string | undefined, done: () => void) {
+    this.title = title;
+    this.filePath = filePath;
+    this.done = done;
+    this.md = new Markdown(markdownContent, 1, 1, getMarkdownTheme());
+  }
+
+  render(width: number): string[] {
+    if (this.lastWidth !== width) {
+      this.lastWidth = width;
+      this.scrollOffset = 0;
+    }
+
+    const header = [
+      this.title,
+      "─".repeat(width),
+    ];
+
+    const mdLines = this.md.render(width - 2);
+
+    const footer = [
+      "─".repeat(width),
+      this.filePath ? `📄 ${this.filePath}` : "",
+      "↑/↓ scroll  ·  PgUp/PgDn  ·  Esc close",
+    ];
+
+    this.allLines = [...header, ...mdLines, ...footer];
+    return this.allLines;
+  }
+
+  handleInput(data: string): void {
+    if (data === "\x1b" || data === "\r") {
+      this.done();
+      return;
+    }
+    if (data === "\x1b[A" || data === "k") {
+      this.scrollOffset = Math.max(0, this.scrollOffset - 1);
+      this.requestRenderFn?.();
+      return;
+    }
+    if (data === "\x1b[B" || data === "j") {
+      this.scrollOffset++;
+      this.requestRenderFn?.();
+      return;
+    }
+    if (data === "\x1b[5~") {
+      this.scrollOffset = Math.max(0, this.scrollOffset - 10);
+      this.requestRenderFn?.();
+      return;
+    }
+    if (data === "\x1b[6~") {
+      this.scrollOffset += 10;
+      this.requestRenderFn?.();
+      return;
+    }
+  }
+
+  invalidate(): void {
+    this.md.invalidate();
+    this.lastWidth = undefined;
+  }
+
+  setRequestRender(fn: () => void): void {
+    this.requestRenderFn = fn;
+  }
+
+  getScrollOffset(): number {
+    return this.scrollOffset;
+  }
+}
+
+async function showPlanOverlay(ctx: ExtensionContext, title: string, markdownContent: string, filePath?: string): Promise<void> {
+  if (!ctx.hasUI) return;
+
+  await ctx.ui.custom<void>((tui, theme, keybindings, done) => {
+    const component = new PlanOverlayComponent(title, markdownContent, filePath, done);
+    component.setRequestRender(() => tui.requestRender());
+    return component;
+  }, { overlay: true, overlayOptions: { width: "90%", maxHeight: "90%", anchor: "center" } });
+}
+
 export default function questionFirstPlanMode(pi: ExtensionAPI) {
   let enabled = false;
   let previousTools: string[] = [];
@@ -290,9 +393,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
   let askQuestionsCancelledInClarify = false;
   let modelBeforePlanRef: string | undefined;
   let thinkingBeforePlan: string | undefined;
+  let currentPlanPath: string | undefined;
 
   function persistCurrentState() {
-    persistState(pi, { enabled, previousTools, phase, modelBeforePlanRef, thinkingBeforePlan });
+    persistState(pi, { enabled, previousTools, phase, modelBeforePlanRef, thinkingBeforePlan, planPath: currentPlanPath });
   }
 
   function resetClarifyTracking() {
@@ -405,7 +509,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
   async function enablePlanMode(ctx: ExtensionContext) {
     if (enabled) {
-      setPlanStatus(ctx, true, phase);
+      setPlanStatus(ctx, true, phase, currentPlanPath);
       return;
     }
 
@@ -417,9 +521,10 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     enabled = true;
     phase = "clarify";
     lastPromptedPlan = "";
+    currentPlanPath = undefined;
     resetClarifyTracking();
     await applyModeProfile(ctx, "plan");
-    setPlanStatus(ctx, true, phase);
+    setPlanStatus(ctx, true, phase, currentPlanPath);
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode enabled: question-first planning with read-only tools.", "info");
     }
@@ -428,7 +533,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
   async function disablePlanMode(ctx: ExtensionContext, options?: { restoreModelProfile?: boolean }) {
     if (!enabled) {
-      setPlanStatus(ctx, false, phase);
+      setPlanStatus(ctx, false, phase, currentPlanPath);
       return;
     }
 
@@ -438,7 +543,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     phase = "clarify";
     lastPromptedPlan = "";
     resetClarifyTracking();
-    setPlanStatus(ctx, false, phase);
+    setPlanStatus(ctx, false, phase, currentPlanPath);
     if (ctx.hasUI) {
       ctx.ui.notify("Plan mode disabled.", "info");
     }
@@ -472,7 +577,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     }
 
     if (raw === "status") {
-      ctx.ui.notify(enabled ? `Plan mode is ON (${phase})` : "Plan mode is OFF", "info");
+      ctx.ui.notify(enabled ? `Plan mode is ON (${phase})${currentPlanPath ? ` — ${currentPlanPath}` : ""}` : "Plan mode is OFF", "info");
       return;
     }
 
@@ -482,11 +587,71 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       phase = "clarify";
       lastPromptedPlan = "";
       resetClarifyTracking();
-      setPlanStatus(ctx, true, phase);
+      setPlanStatus(ctx, true, phase, currentPlanPath);
       persistCurrentState();
     }
     pi.sendUserMessage(raw);
   }
+
+  // ── write_plan tool ────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "write_plan",
+    label: "Write Plan",
+    description:
+      "Save the plan as a markdown file artifact. Use this to persist your plan for review and implementation. Always use this instead of writing the plan in your response text.",
+    promptSnippet: "Save the plan as a markdown artifact file",
+    promptGuidelines: [
+      "Always use write_plan to save your plan instead of writing it as plain text in your response.",
+      "Include a clear title and structured markdown content with numbered steps.",
+    ],
+    parameters: Type.Object({
+      title: Type.String({ description: "Short descriptive title for the plan (used as directory name)" }),
+      content: Type.String({ description: "Full plan content in markdown format" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      try {
+        const filePath = writePlanArtifact(ctx.cwd, params.title, params.content);
+        currentPlanPath = filePath;
+        persistCurrentState();
+
+        // Update status bar to show plan path
+        setPlanStatus(ctx, true, phase, currentPlanPath);
+
+        return {
+          content: [{ type: "text", text: `Plan saved to ${filePath}` }],
+          details: { filePath, title: params.title },
+        };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `Failed to save plan: ${msg}` }],
+          details: {},
+          isError: true,
+        };
+      }
+    },
+    renderCall(args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("write_plan ")) + theme.fg("muted", args.title || ""),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _options, theme) {
+      const details = result.details as { filePath?: string; title?: string } | undefined;
+      if (details?.filePath) {
+        return new Text(
+          theme.fg("success", "✓ ") + theme.fg("accent", "Plan saved: ") + theme.fg("muted", details.filePath),
+          0,
+          0,
+        );
+      }
+      return new Text(theme.fg("success", "✓ Plan saved"), 0, 0);
+    },
+  });
+
+  // ── ask_questions tool ─────────────────────────────────────────────
 
   pi.registerTool({
     name: "ask_questions",
@@ -608,9 +773,32 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     },
   });
 
+  // ── Commands ───────────────────────────────────────────────────────
+
   pi.registerCommand("plan", {
     description: "Question-first plan mode. Usage: /plan, /plan on, /plan off, /plan status, /plan <task>",
     handler: async (args, ctx) => planCommand(args, ctx),
+  });
+
+  pi.registerCommand("planview", {
+    description: "View the current plan markdown artifact",
+    handler: async (_args, ctx) => {
+      if (!currentPlanPath) {
+        ctx.ui.notify("No plan file exists yet. Use /plan to create one.", "info");
+        return;
+      }
+      const content = readPlanArtifact(currentPlanPath);
+      if (!content) {
+        ctx.ui.notify(`Plan file not found: ${currentPlanPath}`, "error");
+        return;
+      }
+
+      // Extract title from frontmatter
+      const titleMatch = content.match(/^title:\s*"(.+)"/m);
+      const title = titleMatch ? titleMatch[1] : "Plan";
+
+      await showPlanOverlay(ctx, title, content, currentPlanPath);
+    },
   });
 
   pi.registerShortcut("ctrl+alt+p", {
@@ -621,6 +809,8 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     },
   });
 
+  // ── Events ──────────────────────────────────────────────────────────
+
   pi.on("session_start", async (_event, ctx) => {
     const restored = restoreState(ctx);
     if (restored) {
@@ -629,6 +819,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       phase = restored.phase ?? phase;
       modelBeforePlanRef = restored.modelBeforePlanRef;
       thinkingBeforePlan = restored.thinkingBeforePlan;
+      currentPlanPath = restored.planPath;
     }
     if (enabled) {
       const baseTools = previousTools.length > 0 ? previousTools : pi.getActiveTools();
@@ -636,7 +827,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       await applyModeProfile(ctx, "plan");
     }
     resetClarifyTracking();
-    setPlanStatus(ctx, enabled, phase);
+    setPlanStatus(ctx, enabled, phase, currentPlanPath);
   });
 
   pi.on("before_agent_start", async (event, _ctx) => {
@@ -667,13 +858,13 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     if (phase === "clarify") {
       if (askQuestionsUsedInClarify && !askQuestionsCancelledInClarify) {
         phase = "plan";
-        setPlanStatus(ctx, true, phase);
+        setPlanStatus(ctx, true, phase, currentPlanPath);
         persistCurrentState();
         resetClarifyTracking();
         pi.sendMessage(
           {
             customType: "plan-mode-auto-plan",
-            content: "Generate the plan now using the clarification answers already collected.",
+            content: "Generate the plan now using the clarification answers already collected. Use the write_plan tool to save it.",
             display: false,
           },
           { triggerTurn: true },
@@ -683,13 +874,13 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
       if (!askQuestionsUsedInClarify && NO_CLARIFY_NEEDED_PATTERN.test(lastAssistantText)) {
         phase = "plan";
-        setPlanStatus(ctx, true, phase);
+        setPlanStatus(ctx, true, phase, currentPlanPath);
         persistCurrentState();
         resetClarifyTracking();
         pi.sendMessage(
           {
             customType: "plan-mode-auto-plan",
-            content: "No clarifying questions were needed. Generate the full plan now.",
+            content: "No clarifying questions were needed. Generate the full plan now using the write_plan tool.",
             display: false,
           },
           { triggerTurn: true },
@@ -698,7 +889,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       }
 
       phase = "wait_answers";
-      setPlanStatus(ctx, true, phase);
+      setPlanStatus(ctx, true, phase, currentPlanPath);
       persistCurrentState();
       resetClarifyTracking();
       ctx.ui.notify("Reply with /answer <responses> (or a normal message), then I will generate the plan.", "info");
@@ -707,22 +898,47 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
     if (phase !== "plan") return;
 
-    const steps = extractPlanSteps(lastAssistantText);
-    if (steps.length === 0) return;
+    // If a plan was written via write_plan tool, show it
+    if (currentPlanPath) {
+      const planContent = readPlanArtifact(currentPlanPath);
+      if (planContent) {
+        const titleMatch = planContent.match(/^title:\s*"(.+)"/m);
+        const title = titleMatch ? titleMatch[1] : "Plan";
 
-    const fingerprint = planFingerprint(steps);
+        // Show the plan overlay
+        await showPlanOverlay(ctx, title, planContent, currentPlanPath);
+      }
+    }
+
+    const steps = extractPlanSteps(lastAssistantText);
+    if (steps.length === 0 && !currentPlanPath) return;
+
+    // Only prompt action if we haven't already prompted this plan
+    const fingerprint = steps.length > 0 ? planFingerprint(steps) : currentPlanPath;
     if (!fingerprint || fingerprint === lastPromptedPlan) return;
     lastPromptedPlan = fingerprint;
 
-    const choice = await ctx.ui.select("Plan ready — what next?", [
-      "Implement now (exit plan mode)",
-      "Stay in plan mode",
-      "Refine the plan",
-    ]);
+    const choices = ["Implement now (exit plan mode)", "Stay in plan mode", "Refine the plan"];
+    const choice = await ctx.ui.select("Plan ready — what next?", choices);
 
     if (choice?.startsWith("Implement")) {
+      // Update plan status to "approved"
+      if (currentPlanPath) {
+        updatePlanStatus(currentPlanPath, "approved");
+      }
       await disablePlanMode(ctx, { restoreModelProfile: false });
       await applyModeProfile(ctx, "implement");
+
+      // Show plan overlay before implementing
+      if (currentPlanPath) {
+        const content = readPlanArtifact(currentPlanPath);
+        if (content) {
+          const titleMatch = content.match(/^title:\s*"(.+)"/m);
+          const title = titleMatch ? titleMatch[1] : "Plan";
+          await showPlanOverlay(ctx, title, content, currentPlanPath);
+        }
+      }
+
       pi.sendMessage(
         { customType: "plan-mode-implement", content: "Implement the approved plan now.", display: true },
         { triggerTurn: true },

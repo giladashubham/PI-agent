@@ -1,4 +1,4 @@
-const DEFAULT_SUBAGENT_MODEL = "openai/gpt-5.4-mini";
+const DEFAULT_SUBAGENT_MODEL = "openai-codex/gpt-5.4-mini";
 
 export interface SubAgentModelConfig {
   model?: string;
