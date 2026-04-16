@@ -57,4 +57,21 @@ describe("applyEnvVars", () => {
     if (previous === undefined) delete process.env[key];
     else process.env[key] = previous;
   });
+
+  it("does not overwrite preserved keys even when overrideExisting is true", () => {
+    const key = "PI_ENV_LOADER_SHELL_KEY";
+    const previous = process.env[key];
+
+    process.env[key] = "from-shell";
+    const result = applyEnvVars(
+      { [key]: "from-dotenv" },
+      { overrideExisting: true, preserveKeys: new Set([key]) },
+    );
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(process.env[key]).toBe("from-shell");
+
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
 });

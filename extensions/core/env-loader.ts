@@ -5,6 +5,30 @@ import { join } from "node:path";
 
 const STATUS_KEY = "env-loader";
 const DEFAULT_ENV_PATHS = [join(homedir(), ".pi", "agent", ".env")];
+const GLOBAL_STATE_KEY = "__PI_AGENT_ENV_LOADER_STATE__";
+
+type EnvLoaderGlobalState = {
+  shellEnvKeys: Set<string>;
+};
+
+type ApplyEnvOptions = {
+  overrideExisting?: boolean;
+  preserveKeys?: ReadonlySet<string>;
+};
+
+function getGlobalState(): EnvLoaderGlobalState {
+  const globalWithState = globalThis as typeof globalThis & {
+    [GLOBAL_STATE_KEY]?: EnvLoaderGlobalState;
+  };
+
+  if (!globalWithState[GLOBAL_STATE_KEY]) {
+    globalWithState[GLOBAL_STATE_KEY] = {
+      shellEnvKeys: new Set(Object.keys(process.env)),
+    };
+  }
+
+  return globalWithState[GLOBAL_STATE_KEY];
+}
 
 export interface ParsedDotEnv {
   vars: Record<string, string>;
@@ -73,12 +97,18 @@ export function parseDotEnv(content: string): ParsedDotEnv {
   return { vars, invalidLines };
 }
 
-export function applyEnvVars(vars: Record<string, string>, options?: { overrideExisting?: boolean }): EnvApplyResult {
+export function applyEnvVars(vars: Record<string, string>, options?: ApplyEnvOptions): EnvApplyResult {
   const overrideExisting = options?.overrideExisting === true;
+  const preserveKeys = options?.preserveKeys;
   let applied = 0;
   let skipped = 0;
 
   for (const [key, value] of Object.entries(vars)) {
+    if (preserveKeys?.has(key)) {
+      skipped += 1;
+      continue;
+    }
+
     if (!overrideExisting && process.env[key] !== undefined) {
       skipped += 1;
       continue;
@@ -91,7 +121,7 @@ export function applyEnvVars(vars: Record<string, string>, options?: { overrideE
   return { applied, skipped };
 }
 
-export function loadEnvFiles(paths: string[], options?: { overrideExisting?: boolean }): EnvLoadSummary {
+export function loadEnvFiles(paths: string[], options?: ApplyEnvOptions): EnvLoadSummary {
   const summary: EnvLoadSummary = {
     filesLoaded: 0,
     keysLoaded: 0,
@@ -118,12 +148,15 @@ export function loadEnvFiles(paths: string[], options?: { overrideExisting?: boo
   return summary;
 }
 
-export function loadDefaultEnvFiles(options?: { overrideExisting?: boolean }): EnvLoadSummary {
+export function loadDefaultEnvFiles(options?: ApplyEnvOptions): EnvLoadSummary {
   return loadEnvFiles(DEFAULT_ENV_PATHS, options);
 }
 
 export default function envLoaderExtension(pi: ExtensionAPI) {
-  const summary = loadDefaultEnvFiles();
+  const summary = loadDefaultEnvFiles({
+    overrideExisting: true,
+    preserveKeys: getGlobalState().shellEnvKeys,
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
