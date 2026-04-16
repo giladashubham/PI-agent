@@ -775,39 +775,100 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
         };
       }
 
-      for (const item of params.questions) {
+      const totalQuestions = params.questions.length;
+      const answers: string[] = Array.from({ length: totalQuestions }, () => "");
+
+      const cancelAndReturn = (): {
+        content: Array<{ type: "text"; text: string }>;
+        details: AskQuestionsDetails;
+      } => {
+        details.cancelled = true;
+        if (enabled && phase === "clarify") {
+          askQuestionsUsedInClarify = true;
+          askQuestionsCancelledInClarify = true;
+        }
+        return {
+          content: [{ type: "text", text: "User cancelled the clarification questions." }],
+          details,
+        };
+      };
+
+      const askOne = async (item: AskQuestionItem, index: number): Promise<string | undefined> => {
         const required = item.required !== false;
+        const progress = `[${index + 1}/${totalQuestions}]`;
+        const meta = `${required ? "required" : "optional"}${item.multiline ? ", multiline" : ""}`;
+        const defaultHint = item.defaultAnswer?.trim() ? `\nDefault: ${item.defaultAnswer}` : "";
+        const promptTitle = `${progress} ${item.question}\n(${meta})${defaultHint}`;
+
         while (true) {
+          const prefill = answers[index] || item.defaultAnswer || "";
           const answer = item.multiline
-            ? await ctx.ui.editor(item.question, item.defaultAnswer ?? "")
-            : await ctx.ui.input(item.question, item.placeholder ?? item.defaultAnswer ?? "");
+            ? await ctx.ui.editor(promptTitle, prefill)
+            : await ctx.ui.input(promptTitle, item.placeholder ?? (prefill ? `default: ${prefill}` : ""));
 
-          if (answer === undefined) {
-            details.cancelled = true;
-            if (enabled && phase === "clarify") {
-              askQuestionsUsedInClarify = true;
-              askQuestionsCancelledInClarify = true;
-            }
-            return {
-              content: [{ type: "text", text: "User cancelled the clarification questions." }],
-              details,
-            };
-          }
+          if (answer === undefined) return undefined;
 
-          const normalized = answer.trim();
+          const fallback = item.defaultAnswer?.trim() || "";
+          const normalized = answer.trim() || fallback;
           if (!normalized && required) {
-            ctx.ui.notify("This question needs an answer.", "warning");
+            ctx.ui.notify(`Question ${index + 1} requires an answer.`, "warning");
             continue;
           }
 
-          details.answers.push({
-            id: item.id,
-            question: item.question,
-            answer: normalized,
-          });
+          return normalized;
+        }
+      };
+
+      for (let i = 0; i < totalQuestions; i += 1) {
+        const response = await askOne(params.questions[i], i);
+        if (response === undefined) {
+          return cancelAndReturn();
+        }
+        answers[i] = response;
+      }
+
+      while (totalQuestions > 1) {
+        const choice = await ctx.ui.select("Review clarification answers", ["Submit answers", "Edit an answer", "Cancel"]);
+        if (!choice || choice === "Cancel") {
+          return cancelAndReturn();
+        }
+        if (choice === "Submit answers") {
           break;
         }
+
+        const options = params.questions.map((item, index) => {
+          const text = answers[index] || "(empty)";
+          const preview = text.length > 80 ? `${text.slice(0, 77)}...` : text;
+          return `${index + 1}. ${item.id}: ${preview}`;
+        });
+
+        const selection = await ctx.ui.select("Select an answer to edit", options);
+        if (!selection) {
+          continue;
+        }
+
+        const match = selection.match(/^(\d+)\./);
+        if (!match) {
+          continue;
+        }
+
+        const selectedIndex = Number(match[1]) - 1;
+        if (selectedIndex < 0 || selectedIndex >= totalQuestions) {
+          continue;
+        }
+
+        const updated = await askOne(params.questions[selectedIndex], selectedIndex);
+        if (updated === undefined) {
+          return cancelAndReturn();
+        }
+        answers[selectedIndex] = updated;
       }
+
+      details.answers = params.questions.map((item, index) => ({
+        id: item.id,
+        question: item.question,
+        answer: answers[index] || "",
+      }));
 
       if (enabled && phase === "clarify") {
         askQuestionsUsedInClarify = true;
