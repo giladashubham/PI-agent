@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "picomatch": "^4.0.3",
-    "puppeteer": "^24.0.0"
+    "puppeteer": "^24.41.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",
