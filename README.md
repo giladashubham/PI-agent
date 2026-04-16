@@ -1,6 +1,6 @@
 # Pi Agent Custom Bundle
 
-A custom Pi package repository with curated extensions, skills, themes, and a web-fetch tool.
+A custom Pi package repository with curated extensions, skills, and a web-fetch tool.
 
 This repo is organized for maintainability (similar high-level style to larger Pi package repos), while preserving current behavior.
 
@@ -8,7 +8,6 @@ This repo is organized for maintainability (similar high-level style to larger P
 
 - **Extensions** for env loading, UI, planning workflow, model filtering, and prompt behavior
 - **Skills** for reusable operating guidelines
-- **Themes** (repo path reserved; currently empty)
 - **Web fetch tool** implemented under `tools/web-fetch`
 
 ## Repository layout
@@ -23,7 +22,6 @@ This repo is organized for maintainability (similar high-level style to larger P
 ├── tools/
 │   └── web-fetch/
 ├── skills/
-├── themes/
 ├── tests/
 ├── docs/
 │   ├── ARCHITECTURE.md

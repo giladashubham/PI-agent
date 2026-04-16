@@ -6,7 +6,6 @@ This package is a **Pi bundle** that ships:
 
 - runtime extensions (`extensions/**` + tool entrypoints)
 - reusable skills (`skills/**`)
-- optional themes (`themes/**`)
 
 Design goals:
 
@@ -27,7 +26,6 @@ Pi loads resources from `package.json`:
   - `extensions/providers/opencode-go-models.ts`
   - `tools/web-fetch/index.ts`
 - Skills: `skills/`
-- Themes: `themes/`
 
 ## Directory ownership
 
@@ -65,10 +63,6 @@ Web fetching tool implementation and internal modules:
 ## `skills/`
 
 Agent Skills compliant definitions (`<skill>/SKILL.md`).
-
-## `themes/`
-
-Optional Pi TUI theme definitions.
 
 ## Request lifecycle (high level)
 

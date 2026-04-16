@@ -17,7 +17,7 @@ while [ $# -gt 0 ]; do
 Usage: ./install.sh [--dry-run]
 
 Installs this folder as a local Pi package.
-- Does NOT copy extensions/skills/themes into ~/.pi/agent
+- Does NOT copy extensions/skills into ~/.pi/agent
 - Only registers this package path in ~/.pi/agent/settings.json
 
 Environment:

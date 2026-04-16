@@ -12,7 +12,7 @@ const path = require('node:path');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const manifest = pkg.pi || {};
 
-for (const key of ['extensions', 'skills', 'themes']) {
+for (const key of ['extensions', 'skills']) {
   const entries = Array.isArray(manifest[key]) ? manifest[key] : [];
   if (entries.length === 0) {
     throw new Error(`pi.${key} must contain at least one path`);

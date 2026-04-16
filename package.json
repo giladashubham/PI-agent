@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
-  "description": "Custom Pi package bundle with extensions, skills, themes, and web_fetch",
+  "description": "Custom Pi package bundle with extensions, skills, and web_fetch",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -30,9 +30,6 @@
     ],
     "skills": [
       "./skills"
-    ],
-    "themes": [
-      "./themes"
     ]
   },
   "dependencies": {
