@@ -34,17 +34,17 @@
   },
   "dependencies": {
     "picomatch": "^4.0.3",
-    "puppeteer": "^24.0.0"
+    "puppeteer": "^24.41.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.26.0",
-    "@types/node": "^24.0.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
     "@types/picomatch": "^4.0.3",
-    "eslint": "^9.26.0",
+    "eslint": "^10.2.0",
     "prettier": "^3.5.3",
-    "typescript": "^5.8.3",
+    "typescript": "^6.0.2",
     "typescript-eslint": "^8.32.1",
-    "vitest": "^3.1.2"
+    "vitest": "^4.1.4"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",

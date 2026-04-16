@@ -271,8 +271,8 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext, preset: FooterPr
         const thinkingLevel = pi.getThinkingLevel?.();
         const gitBranch = compactBranchName(footerData.getGitBranch());
 
-        const usagePercent = usage?.percent;
-        const roundedPercent = usagePercent == null ? null : Math.round(usagePercent);
+        const usagePercent = usage?.percent ?? undefined;
+        const roundedPercent = usagePercent == null ? undefined : Math.round(usagePercent);
         const usageText =
           roundedPercent == null
             ? "--"
