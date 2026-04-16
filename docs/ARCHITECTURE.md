@@ -24,6 +24,7 @@ Pi loads resources from `package.json`:
   - `extensions/modes/question-first-plan-mode.ts`
   - `extensions/policies/karpathy-guidelines.ts`
   - `extensions/providers/opencode-free-models.ts`
+  - `extensions/providers/opencode-go-models.ts`
   - `tools/web-fetch/index.ts`
 - Skills: `skills/`
 - Themes: `themes/`
