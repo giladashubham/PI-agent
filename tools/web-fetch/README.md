@@ -170,19 +170,19 @@ Create `~/.pi/agent/web-fetch.json` to override defaults:
 
 ```json
 {
-  "model": "provider/model-id",
-  "thinkingLevel": "medium",
+  "model": "openai/gpt-5.4-mini",
+  "thinkingLevel": "low",
   "extensionsDir": "~/.pi/extensions/web-fetch"
 }
 ```
 
-| Key             | Default                        | Description                                                             |
-| --------------- | ------------------------------ | ----------------------------------------------------------------------- |
-| `model`         | Current session model          | Model for LLM content processing                                        |
-| `thinkingLevel` | Current session thinking level | Thinking level for the sub-agent                                        |
-| `extensionsDir` | `~/.pi/extensions/web-fetch/`  | Directory for local extensions (`~` is expanded to your home directory) |
+| Key             | Default                       | Description                                                             |
+| --------------- | ----------------------------- | ----------------------------------------------------------------------- |
+| `model`         | `openai/gpt-5.4-mini`         | Model for LLM content processing                                        |
+| `thinkingLevel` | `low`                         | Thinking level for the sub-agent                                        |
+| `extensionsDir` | `~/.pi/extensions/web-fetch/` | Directory for local extensions (`~` is expanded to your home directory) |
 
-Without a config file, the extension uses whatever model and thinking level the current session is using.
+Without a config file, the extension defaults to `openai/gpt-5.4-mini` and `low` thinking.
 
 ## Architecture
 

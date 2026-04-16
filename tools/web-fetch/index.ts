@@ -32,6 +32,7 @@ interface WebFetchConfig extends SubAgentModelConfig {
 }
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "web-fetch.json");
+const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
 
 function loadConfig(): WebFetchConfig {
   try {
@@ -39,6 +40,12 @@ function loadConfig(): WebFetchConfig {
   } catch {
     return {};
   }
+}
+
+function resolveThinkingLevel(value: string | undefined): string {
+  if (!value) return "low";
+  const normalized = value.trim().toLowerCase();
+  return VALID_THINKING_LEVELS.has(normalized) ? normalized : "low";
 }
 
 function resolveTimeout(value: number | undefined, fallback: number): number {
@@ -153,17 +160,10 @@ export default function webFetchExtension(pi: ExtensionAPI) {
         ),
       ),
     }),
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const modelResolution = resolveSubAgentModel(
-        ctx as { model?: { provider: string; id: string }; modelRegistry: { getAll: () => any[] } },
-        config,
-      );
-      if (modelResolution.error) {
-        return { content: [{ type: "text", text: modelResolution.error }], isError: true };
-      }
-
+    async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+      const modelResolution = resolveSubAgentModel(config);
       const model = modelResolution.model;
-      const thinkingLevel = config.thinkingLevel || pi.getThinkingLevel();
+      const thinkingLevel = resolveThinkingLevel(config.thinkingLevel);
       const hasUrl = params.url !== undefined && params.url !== null;
       const hasPages = params.pages !== undefined && params.pages !== null;
 

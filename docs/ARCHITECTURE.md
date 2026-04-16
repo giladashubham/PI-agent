@@ -19,6 +19,7 @@ Design goals:
 Pi loads resources from `package.json`:
 
 - Extensions:
+  - `extensions/core/env-loader.ts`
   - `extensions/core/custom-core-ui.ts`
   - `extensions/modes/question-first-plan-mode.ts`
   - `extensions/policies/karpathy-guidelines.ts`

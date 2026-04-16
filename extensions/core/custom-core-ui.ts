@@ -15,6 +15,9 @@ const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
 const SETTINGS_PATH = join(PI_AGENT_DIR, "settings.json");
 const BANNER_PATHS = [join(PI_AGENT_DIR, "agent-banner.txt"), join(homedir(), "Desktop", "agent.txt")];
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
+const FOOTER_PRESETS = ["default", "minimal", "compact"] as const;
+type FooterPreset = (typeof FOOTER_PRESETS)[number];
+const FOOTER_PRESET_SETTING_KEY = "customCoreUiFooterPreset";
 
 function loadBannerArt(): string {
   for (const path of BANNER_PATHS) {
@@ -81,10 +84,152 @@ function shortDir(cwd: string): string {
   return parent ? `${parent}/${child}` : child;
 }
 
-function thinkingIndicator(level: string | undefined, theme: any): string {
-  const value = level || "off";
-  const color = value === "off" ? "dim" : value === "high" || value === "xhigh" ? "warning" : "accent";
-  return theme.fg("dim", "thinking: ") + theme.fg(color, theme.bold(value));
+type FooterTone = "accent" | "dim" | "muted" | "warning" | "error" | "success";
+
+interface FooterGlyphs {
+  separator: string;
+  model: string;
+  context: string;
+  dir: string;
+  git: string;
+  thinking: string;
+  plan: string;
+}
+
+interface FooterSegment {
+  text: string;
+  color: FooterTone;
+  bold?: boolean;
+}
+
+function hasNerdFonts(): boolean {
+  if (process.env.POWERLINE_NERD_FONTS === "1") return true;
+  if (process.env.POWERLINE_NERD_FONTS === "0") return false;
+
+  if (process.env.GHOSTTY_RESOURCES_DIR || process.env.KITTY_WINDOW_ID) return true;
+
+  const termProgram = (process.env.TERM_PROGRAM || "").toLowerCase();
+  const lcTerminal = (process.env.LC_TERMINAL || "").toLowerCase();
+  const term = (process.env.TERM || "").toLowerCase();
+  return ["iterm", "wezterm", "kitty", "ghostty", "alacritty"].some(
+    (value) => termProgram.includes(value) || lcTerminal.includes(value) || term.includes(value),
+  );
+}
+
+function footerGlyphs(): FooterGlyphs {
+  if (hasNerdFonts()) {
+    return {
+      separator: "\uE0B1",
+      model: "\uEC19",
+      context: "\uE70F",
+      dir: "\uF115",
+      git: "\uF126",
+      thinking: "\uF085",
+      plan: "\uF0E7",
+    };
+  }
+
+  return {
+    separator: "·",
+    model: "◈",
+    context: "◫",
+    dir: "◉",
+    git: "⎇",
+    thinking: "◌",
+    plan: "⚡",
+  };
+}
+
+function contextTone(percent: number | undefined): FooterTone {
+  if (percent == null) return "dim";
+  if (percent >= 90) return "error";
+  if (percent >= 70) return "warning";
+  return "muted";
+}
+
+function compactThinkingLevel(level: string | undefined): string {
+  const value = (level || "off").toLowerCase();
+  if (value === "minimal") return "min";
+  if (value === "medium") return "med";
+  return value;
+}
+
+function thinkingTone(level: string | undefined): FooterTone {
+  const value = (level || "off").toLowerCase();
+  if (value === "off") return "dim";
+  if (value === "high" || value === "xhigh") return "warning";
+  return "accent";
+}
+
+function renderFooterSegments(theme: any, separator: string, segments: FooterSegment[]): string {
+  const visible = segments.filter((segment) => segment.text.trim().length > 0);
+  return visible
+    .map((segment, index) => {
+      const text = segment.bold ? theme.bold(segment.text) : segment.text;
+      const content = theme.fg(segment.color, text);
+      return index === 0 ? content : theme.fg("borderMuted", ` ${separator} `) + content;
+    })
+    .join("");
+}
+
+function compactBranchName(branch: string | null | undefined): string {
+  if (!branch) return "";
+  if (branch.length <= 28) return branch;
+  return `${branch.slice(0, 27)}…`;
+}
+
+function isFooterPreset(value: unknown): value is FooterPreset {
+  return typeof value === "string" && FOOTER_PRESETS.some((preset) => preset === value);
+}
+
+function resolveFooterSegments(
+  preset: FooterPreset,
+  parts: {
+    model: string;
+    usageText: string;
+    usagePercent: number | undefined;
+    dir: string;
+    gitBranch: string;
+    thinkingLevel: string | undefined;
+    planActive: boolean;
+    glyphs: FooterGlyphs;
+  },
+): { left: FooterSegment[]; right: FooterSegment[] } {
+  const modelSegment: FooterSegment = { text: `${parts.glyphs.model} ${parts.model}`, color: "accent", bold: true };
+  const contextSegment: FooterSegment = {
+    text: `${parts.glyphs.context} ${parts.usageText}`,
+    color: contextTone(parts.usagePercent),
+  };
+  const dirSegment: FooterSegment = { text: `${parts.glyphs.dir} ${parts.dir}`, color: "dim" };
+  const gitSegment: FooterSegment | null = parts.gitBranch
+    ? { text: `${parts.glyphs.git} ${parts.gitBranch}`, color: "success" }
+    : null;
+  const thinkingSegment: FooterSegment = {
+    text: `${parts.glyphs.thinking} ${compactThinkingLevel(parts.thinkingLevel)}`,
+    color: thinkingTone(parts.thinkingLevel),
+    bold: parts.thinkingLevel !== "off",
+  };
+
+  let left: FooterSegment[];
+  switch (preset) {
+    case "minimal":
+      left = [dirSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
+      break;
+    case "compact":
+      left = [modelSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
+      break;
+    case "default":
+    default:
+      left = [modelSegment, gitSegment, contextSegment, dirSegment].filter((segment): segment is FooterSegment => segment !== null);
+      break;
+  }
+
+  const right: FooterSegment[] = [thinkingSegment];
+  if (parts.planActive) {
+    right.push({ text: `${parts.glyphs.plan} PLAN`, color: "warning", bold: true });
+  }
+
+  return { left, right };
 }
 
 function isPlanModeActive(ctx: ExtensionContext): boolean {
@@ -102,32 +247,56 @@ function isPlanModeActive(ctx: ExtensionContext): boolean {
   return false;
 }
 
-function installFooter(pi: ExtensionAPI, ctx: ExtensionContext) {
+function installFooter(pi: ExtensionAPI, ctx: ExtensionContext, preset: FooterPreset) {
   if (!ctx.hasUI) return;
 
-  ctx.ui.setFooter((_tui, theme) => ({
-    invalidate() {},
-    render(width: number): string[] {
-      const usage = ctx.getContextUsage();
-      const model = shortModelName(ctx.model?.name);
-      const contextWindow = ctx.model?.contextWindow || 0;
-      const dir = shortDir(ctx.cwd);
+  const glyphs = footerGlyphs();
 
-      let usageText = "–";
-      if (usage?.percent != null) {
-        const percent = `${Math.round(usage.percent)}%`;
-        usageText = contextWindow > 0 ? `${percent} / ${formatTokens(contextWindow)}` : percent;
-      }
+  ctx.ui.setFooter((tui, theme, footerData) => {
+    const unsubscribeBranchChange = footerData.onBranchChange(() => {
+      tui.requestRender();
+    });
 
-      const planBadge = isPlanModeActive(ctx) ? theme.fg("warning", theme.bold(" PLAN")) : "";
-      const sep = theme.fg("dim", " | ");
-      const left =
-        " " + theme.fg("accent", theme.bold(model)) + sep + theme.fg("dim", usageText) + sep + theme.fg("dim", dir);
-      const right = thinkingIndicator(pi.getThinkingLevel?.(), theme) + planBadge + " ";
-      const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
-      return [truncateToWidth(left + " ".repeat(gap) + right, width, "")];
-    },
-  }));
+    return {
+      invalidate() {},
+      dispose() {
+        unsubscribeBranchChange();
+      },
+      render(width: number): string[] {
+        const usage = ctx.getContextUsage();
+        const model = shortModelName(ctx.model?.name);
+        const contextWindow = ctx.model?.contextWindow || 0;
+        const dir = shortDir(ctx.cwd);
+        const thinkingLevel = pi.getThinkingLevel?.();
+        const gitBranch = compactBranchName(footerData.getGitBranch());
+
+        const usagePercent = usage?.percent;
+        const roundedPercent = usagePercent == null ? null : Math.round(usagePercent);
+        const usageText =
+          roundedPercent == null
+            ? "--"
+            : contextWindow > 0
+              ? `${roundedPercent}%/${formatTokens(contextWindow)}`
+              : `${roundedPercent}%`;
+
+        const segments = resolveFooterSegments(preset, {
+          model,
+          usageText,
+          usagePercent,
+          dir,
+          gitBranch,
+          thinkingLevel,
+          planActive: isPlanModeActive(ctx),
+          glyphs,
+        });
+
+        const left = " " + renderFooterSegments(theme, glyphs.separator, segments.left);
+        const right = renderFooterSegments(theme, glyphs.separator, segments.right) + " ";
+        const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
+        return [truncateToWidth(left + " ".repeat(gap) + right, width, "")];
+      },
+    };
+  });
 }
 
 function updateThemeStatus(ctx: ExtensionContext) {
@@ -144,11 +313,28 @@ function readSettings(): Record<string, unknown> {
   }
 }
 
+function readFooterPreset(): FooterPreset {
+  const settings = readSettings();
+  const value = settings[FOOTER_PRESET_SETTING_KEY];
+  return isFooterPreset(value) ? value : "default";
+}
+
 function persistTheme(name: string) {
   try {
     mkdirSync(PI_AGENT_DIR, { recursive: true });
     const settings = readSettings();
     settings.theme = name;
+    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  } catch {
+    // best effort only
+  }
+}
+
+function persistFooterPreset(preset: FooterPreset) {
+  try {
+    mkdirSync(PI_AGENT_DIR, { recursive: true });
+    const settings = readSettings();
+    settings[FOOTER_PRESET_SETTING_KEY] = preset;
     writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
   } catch {
     // best effort only
@@ -225,6 +411,7 @@ function cycleTheme(
 export default function customCoreUi(pi: ExtensionAPI) {
   let lastCtx: ExtensionContext | undefined;
   let swatchTimer: ReturnType<typeof setTimeout> | null = null;
+  let footerPreset: FooterPreset = readFooterPreset();
 
   const clearSwatchTimer = () => {
     if (swatchTimer) {
@@ -239,8 +426,9 @@ export default function customCoreUi(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     lastCtx = ctx;
+    footerPreset = readFooterPreset();
     showBanner(ctx);
-    installFooter(pi, ctx);
+    installFooter(pi, ctx, footerPreset);
     updateThemeStatus(ctx);
   });
 
@@ -261,6 +449,30 @@ export default function customCoreUi(pi: ExtensionAPI) {
     handler: async (ctx) => {
       lastCtx = ctx;
       cycleTheme(ctx, -1, clearSwatchTimer, rememberTimer);
+    },
+  });
+
+  pi.registerCommand("statusbar", {
+    description: "Set status bar preset: /statusbar [default|minimal|compact]",
+    handler: async (args, ctx) => {
+      lastCtx = ctx;
+      if (!ctx.hasUI) return;
+
+      const requested = (args || "").trim().toLowerCase();
+      if (!requested) {
+        const selected = await ctx.ui.select("Status Bar Preset", [...FOOTER_PRESETS]);
+        if (!selected || !isFooterPreset(selected)) return;
+        footerPreset = selected;
+      } else if (isFooterPreset(requested)) {
+        footerPreset = requested;
+      } else {
+        ctx.ui.notify(`Unknown preset: ${requested}`, "error");
+        return;
+      }
+
+      persistFooterPreset(footerPreset);
+      installFooter(pi, ctx, footerPreset);
+      ctx.ui.notify(`Status bar preset: ${footerPreset}`, "info");
     },
   });
 

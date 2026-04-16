@@ -6,7 +6,7 @@ This repo is organized for maintainability (similar high-level style to larger P
 
 ## What this repo contains
 
-- **Extensions** for UI, planning workflow, model filtering, and prompt behavior
+- **Extensions** for env loading, UI, planning workflow, model filtering, and prompt behavior
 - **Skills** for reusable operating guidelines
 - **Themes** (repo path reserved; currently empty)
 - **Web fetch tool** implemented under `tools/web-fetch`
@@ -87,6 +87,14 @@ Override with:
 ```bash
 PI_AGENT_DIR=/path/to/.pi/agent ./install.sh
 ```
+
+## Global .env loading
+
+This bundle includes an env-loader extension that reads, on startup:
+
+- `~/.pi/agent/.env`
+
+Loaded variables are injected into `process.env` (existing shell env vars are not overwritten).
 
 ## Plan mode model/thinking config
 

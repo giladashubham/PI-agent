@@ -26,6 +26,16 @@ type DynamicProviderModel = {
 
 let allowedFreeModelIds = new Set<string>();
 
+export function isOpencodeApiKeyConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const key = env.OPENCODE_API_KEY ?? env.opencode_API_KEY;
+  return typeof key === "string" && key.trim().length > 0;
+}
+
+export function stripOpencodeModelsFromRegistry(registry: { models?: Array<{ provider?: string }> }): void {
+  if (!Array.isArray(registry.models)) return;
+  registry.models = registry.models.filter((model) => model.provider !== OPENCODE_PROVIDER);
+}
+
 function isFreeCost(cost: Cost | undefined): boolean {
   if (!cost) return false;
   return cost.input === 0 && cost.output === 0 && cost.cacheRead === 0 && cost.cacheWrite === 0;
@@ -54,7 +64,16 @@ function patchModelRegistryForModelBaseUrls(ctx: ExtensionContext) {
   if (typeof originalApplyProviderConfig !== "function") return;
 
   registry.applyProviderConfig = function applyProviderConfigPatched(providerName: string, config: any) {
-    if (providerName !== OPENCODE_PROVIDER || !config?.models?.length || config.oauth || config.streamSimple) {
+    if (providerName !== OPENCODE_PROVIDER) {
+      return originalApplyProviderConfig(providerName, config);
+    }
+
+    if (!isOpencodeApiKeyConfigured()) {
+      registry.models = registry.models.filter((model: any) => model.provider !== providerName);
+      return;
+    }
+
+    if (!config?.models?.length || config.oauth || config.streamSimple) {
       return originalApplyProviderConfig(providerName, config);
     }
 
@@ -104,7 +123,15 @@ function getFreeOpencodeModels(ctx: ExtensionContext): DynamicProviderModel[] {
 }
 
 async function enforceFreeOpencodeOnly(pi: ExtensionAPI, ctx: ExtensionContext) {
+  allowedFreeModelIds = new Set<string>();
+
   patchModelRegistryForModelBaseUrls(ctx);
+
+  if (!isOpencodeApiKeyConfigured()) {
+    stripOpencodeModelsFromRegistry(ctx.modelRegistry as any);
+    ctx.ui.setStatus(STATUS_KEY, "opencode: disabled (no API key)");
+    return;
+  }
 
   const freeModels = getFreeOpencodeModels(ctx);
   allowedFreeModelIds = new Set(freeModels.map((model) => model.id));
@@ -148,6 +175,7 @@ export default function opencodeFreeModels(pi: ExtensionAPI) {
   });
 
   pi.on("model_select", async (event, ctx) => {
+    if (!isOpencodeApiKeyConfigured()) return;
     if (event.model.provider !== OPENCODE_PROVIDER) return;
     if (allowedFreeModelIds.has(event.model.id)) return;
 
