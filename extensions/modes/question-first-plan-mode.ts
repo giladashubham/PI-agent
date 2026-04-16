@@ -291,6 +291,22 @@ function planFingerprint(steps: string[]): string {
   return steps.map((step) => step.toLowerCase().replace(/\s+/g, " ").trim()).join("|");
 }
 
+function splitFrontmatter(markdownContent: string): { frontmatter?: string; body: string } {
+  const normalized = markdownContent.replace(/\r\n/g, "\n");
+  if (!normalized.startsWith("---\n")) {
+    return { body: markdownContent };
+  }
+
+  const end = normalized.indexOf("\n---\n", 4);
+  if (end < 0) {
+    return { body: markdownContent };
+  }
+
+  const frontmatter = normalized.slice(0, end + 5);
+  const body = normalized.slice(end + 5);
+  return { frontmatter, body: body.trimStart() };
+}
+
 /**
  * Plan overlay component — scrollable Markdown viewer with Escape to close.
  */
@@ -298,6 +314,10 @@ class PlanOverlayComponent {
   private md: Markdown;
   private title: string;
   private filePath: string | undefined;
+  private fullContent: string;
+  private bodyContent: string;
+  private hasFrontmatter: boolean;
+  private showFrontmatter = false;
   private scrollOffset = 0;
   private maxScrollOffset = 0;
   private lastWidth?: number;
@@ -316,7 +336,28 @@ class PlanOverlayComponent {
     this.filePath = filePath;
     this.done = done;
     this.getTerminalRows = getTerminalRows;
-    this.md = new Markdown(markdownContent, 1, 1, getMarkdownTheme());
+
+    const split = splitFrontmatter(markdownContent);
+    this.fullContent = markdownContent;
+    this.bodyContent = split.body;
+    this.hasFrontmatter = Boolean(split.frontmatter);
+    this.md = new Markdown(this.bodyContent, 1, 1, getMarkdownTheme());
+  }
+
+  private activeContentLabel(): string {
+    if (!this.hasFrontmatter) return "content";
+    return this.showFrontmatter ? "frontmatter: visible" : "frontmatter: hidden";
+  }
+
+  private switchContent(showFrontmatter: boolean): void {
+    if (!this.hasFrontmatter) return;
+    if (this.showFrontmatter === showFrontmatter) return;
+
+    this.showFrontmatter = showFrontmatter;
+    const nextContent = this.showFrontmatter ? this.fullContent : this.bodyContent;
+    this.md = new Markdown(nextContent, 1, 1, getMarkdownTheme());
+    this.lastWidth = undefined;
+    this.requestRenderFn?.();
   }
 
   render(width: number): string[] {
@@ -325,7 +366,10 @@ class PlanOverlayComponent {
       this.scrollOffset = 0;
     }
 
-    const header = [this.title, "─".repeat(width)];
+    const header = [
+      this.title,
+      `─`.repeat(width),
+    ];
     const mdLines = this.md.render(Math.max(1, width - 2));
 
     const overlayHeight = Math.max(8, Math.floor(this.getTerminalRows() * 0.9));
@@ -341,10 +385,13 @@ class PlanOverlayComponent {
 
     const rangeStart = mdLines.length === 0 ? 0 : start + 1;
     const rangeEnd = mdLines.length === 0 ? 0 : end;
+    const percent = this.maxScrollOffset <= 0 ? 100 : Math.round((this.scrollOffset / this.maxScrollOffset) * 100);
+    const positionText = `${rangeStart}-${rangeEnd}/${mdLines.length} · ${percent}%`;
+
     const footer = [
       "─".repeat(width),
-      this.filePath ? `📄 ${this.filePath}  (${rangeStart}-${rangeEnd}/${mdLines.length})` : `(${rangeStart}-${rangeEnd}/${mdLines.length})`,
-      "↑/↓ scroll  ·  PgUp/PgDn  ·  Esc close",
+      this.filePath ? `📄 ${this.filePath}  (${positionText})  ·  ${this.activeContentLabel()}` : `(${positionText})  ·  ${this.activeContentLabel()}`,
+      "↑/↓ scroll  ·  PgUp/PgDn  ·  g/G top/bottom  ·  f toggle frontmatter  ·  Esc close",
     ];
 
     return [...header, ...visibleMdLines, ...footer];
@@ -374,6 +421,19 @@ class PlanOverlayComponent {
       this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 10);
       this.requestRenderFn?.();
       return;
+    }
+    if (data === "g") {
+      this.scrollOffset = 0;
+      this.requestRenderFn?.();
+      return;
+    }
+    if (data === "G") {
+      this.scrollOffset = this.maxScrollOffset;
+      this.requestRenderFn?.();
+      return;
+    }
+    if (data === "f") {
+      this.switchContent(!this.showFrontmatter);
     }
   }
 
