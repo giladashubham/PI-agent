@@ -22,6 +22,7 @@ This repo is organized for maintainability (similar high-level style to larger P
 ├── tools/
 │   └── web-fetch/
 ├── skills/
+├── plans/
 ├── tests/
 ├── docs/
 │   ├── ARCHITECTURE.md
@@ -121,10 +122,10 @@ Example:
       "thinkingLevel": "high"
     },
     "plan": {
-      "model": "openai/gpt-5.4"
+      "model": "openai-codex/gpt-5.4"
     },
     "implement": {
-      "model": "openai/gpt-codex-5.3",
+      "model": "openai-codex/gpt-5.3-codex",
       "thinkingLevel": "medium"
     }
   }
@@ -148,6 +149,48 @@ Notes:
 - When selecting **Implement now** from plan mode, implement profile is applied.
 - Legacy `~/.pi/agent/plan-mode.json` is still read as a fallback when `pi-agent-custom.json.planMode` is absent.
 - `settings.json.planMode` is also accepted as a compatibility fallback.
+
+
+
+## Plan artifacts
+
+When plan mode generates a plan, it saves it as a markdown file artifact:
+
+```text
+plans/
+└── 2026-04-16-add-auth/
+    └── plan.md
+```
+
+Each plan file includes YAML frontmatter with title, date, and status:
+
+```markdown
+---
+title: "Add user authentication"
+date: 2026-04-16
+status: draft
+---
+
+## Plan
+
+1. Add login page
+2. Implement JWT tokens
+3. ...
+```
+
+- Plans are created via the `write_plan` tool (available during plan mode)
+- The `status` field is updated to `approved` when implementation starts
+- The `/planview` command shows the current plan as a rendered markdown overlay
+- Plan directories are gitignored by default — they're session artifacts, not source code
+
+Commands:
+
+- `/plan` — Toggle plan mode
+- `/plan on` — Enable plan mode
+- `/plan off` — Disable plan mode
+- `/plan <task>` — Enable plan mode with a task
+- `/planview` — View the current plan artifact
+- `Ctrl+Alt+P` — Toggle plan mode shortcut
 
 ## Development quality gates
 

@@ -37,6 +37,11 @@ Session UX surface: status/footer/banner/theme controls.
 
 Conversation-flow control and operational mode behavior.
 
+### Plan mode modules
+
+- `question-first-plan-mode.ts` — main extension: plan/clarify/implement workflow, ask_questions tool, write_plan tool, plan overlay viewer
+- `plan-artifact.ts` — pure utilities for plan file I/O: slug generation, frontmatter, gitignore management
+
 ## `extensions/policies/`
 
 Prompt-level behavioral constraints and operating principles.
@@ -59,6 +64,10 @@ Web fetching tool implementation and internal modules:
 - `registry.ts` — URL pattern matching + extension priority
 - `url-utils.ts`, `path-utils.ts`, `batch-format.ts`, `batch-status.ts` — focused helpers
 - `extensions/*.ts` — built-in site handlers
+
+## `plans/`
+
+Auto-generated plan artifact directories (gitignored). Each plan is saved as `plans/<date>-<slug>/plan.md` with YAML frontmatter (title, date, status).
 
 ## `skills/`
 
