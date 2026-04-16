@@ -31,15 +31,35 @@ interface WebFetchConfig extends SubAgentModelConfig {
   subagentTimeoutMs?: number;
 }
 
-const CONFIG_PATH = join(homedir(), ".pi", "agent", "web-fetch.json");
+const CUSTOM_CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-agent-custom.json");
+const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
+const LEGACY_CONFIG_PATH = join(homedir(), ".pi", "agent", "web-fetch.json");
 const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
 
-function loadConfig(): WebFetchConfig {
+function readJsonObject(path: string): Record<string, unknown> | undefined {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as WebFetchConfig;
+    const parsed = JSON.parse(readFileSync(path, "utf-8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
   } catch {
-    return {};
+    return undefined;
   }
+}
+
+function loadConfig(): WebFetchConfig {
+  const custom = readJsonObject(CUSTOM_CONFIG_PATH);
+  const customConfig = custom?.webFetch;
+  if (customConfig && typeof customConfig === "object" && !Array.isArray(customConfig)) {
+    return customConfig as WebFetchConfig;
+  }
+
+  const settings = readJsonObject(SETTINGS_PATH);
+  const settingsConfig = settings?.webFetch;
+  if (settingsConfig && typeof settingsConfig === "object" && !Array.isArray(settingsConfig)) {
+    return settingsConfig as WebFetchConfig;
+  }
+
+  const legacy = readJsonObject(LEGACY_CONFIG_PATH);
+  return (legacy as WebFetchConfig | undefined) ?? {};
 }
 
 function resolveThinkingLevel(value: string | undefined): string {

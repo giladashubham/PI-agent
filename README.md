@@ -96,25 +96,39 @@ This bundle includes an env-loader extension that reads, on startup:
 
 Loaded variables are injected into `process.env` (existing shell env vars are not overwritten).
 
+## Custom bundle config file
+
+Bundle-specific settings live in:
+
+- `~/.pi/agent/pi-agent-custom.json`
+
+Current keys used by this bundle:
+
+- `planMode` — plan mode model/thinking profiles
+- `webFetch` — web-fetch model/timeouts/extensions settings
+- `ui.theme` and `ui.footerPreset` — custom core UI preferences
+
 ## Plan mode model/thinking config
 
 Plan mode supports per-phase model + thinking configuration via:
 
-- `~/.pi/agent/plan-mode.json`
+- `~/.pi/agent/pi-agent-custom.json` under `planMode`
 
 Example:
 
 ```json
 {
-  "defaults": {
-    "thinkingLevel": "high"
-  },
-  "plan": {
-    "model": "openai/gpt-5.4"
-  },
-  "implement": {
-    "model": "openai/gpt-codex-5.3",
-    "thinkingLevel": "medium"
+  "planMode": {
+    "defaults": {
+      "thinkingLevel": "high"
+    },
+    "plan": {
+      "model": "openai/gpt-5.4"
+    },
+    "implement": {
+      "model": "openai/gpt-codex-5.3",
+      "thinkingLevel": "medium"
+    }
   }
 }
 ```
@@ -134,6 +148,8 @@ Notes:
 - Use `provider/model-id` for model names when possible.
 - On manual `/plan off`, previous model/thinking (before plan mode) is restored.
 - When selecting **Implement now** from plan mode, implement profile is applied.
+- Legacy `~/.pi/agent/plan-mode.json` is still read as a fallback when `pi-agent-custom.json.planMode` is absent.
+- `settings.json.planMode` is also accepted as a compatibility fallback.
 
 ## Development quality gates
 

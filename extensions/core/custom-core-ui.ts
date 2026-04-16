@@ -13,11 +13,12 @@ const DEFAULT_BANNER = `                             ▄▄
 
 const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
 const SETTINGS_PATH = join(PI_AGENT_DIR, "settings.json");
+const CUSTOM_CONFIG_PATH = join(PI_AGENT_DIR, "pi-agent-custom.json");
 const BANNER_PATHS = [join(PI_AGENT_DIR, "agent-banner.txt"), join(homedir(), "Desktop", "agent.txt")];
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
 const FOOTER_PRESETS = ["default", "minimal", "compact"] as const;
 type FooterPreset = (typeof FOOTER_PRESETS)[number];
-const FOOTER_PRESET_SETTING_KEY = "customCoreUiFooterPreset";
+const LEGACY_FOOTER_PRESET_SETTING_KEY = "customCoreUiFooterPreset";
 
 function loadBannerArt(): string {
   for (const path of BANNER_PATHS) {
@@ -304,40 +305,92 @@ function updateThemeStatus(ctx: ExtensionContext) {
   ctx.ui.setStatus("custom-core-ui-theme", ctx.ui.theme.name);
 }
 
-function readSettings(): Record<string, unknown> {
+function readJsonObject(path: string): Record<string, unknown> {
   try {
-    if (!existsSync(SETTINGS_PATH)) return {};
-    return JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+    if (!existsSync(path)) return {};
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
   } catch {
-    return {};
+    // ignore parse/IO errors
   }
+  return {};
+}
+
+function readSettings(): Record<string, unknown> {
+  return readJsonObject(SETTINGS_PATH);
+}
+
+function readCustomConfig(): Record<string, unknown> {
+  return readJsonObject(CUSTOM_CONFIG_PATH);
+}
+
+function readUiConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const ui = config.ui;
+  if (ui && typeof ui === "object" && !Array.isArray(ui)) {
+    return ui as Record<string, unknown>;
+  }
+  return {};
+}
+
+function writeCustomConfig(config: Record<string, unknown>) {
+  try {
+    mkdirSync(PI_AGENT_DIR, { recursive: true });
+    writeFileSync(CUSTOM_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
+  } catch {
+    // best effort only
+  }
+}
+
+function readSavedThemeName(): string | undefined {
+  const custom = readCustomConfig();
+  const ui = readUiConfig(custom);
+  if (typeof ui.theme === "string" && ui.theme.trim()) {
+    return ui.theme.trim();
+  }
+
+  const settings = readSettings();
+  return typeof settings.theme === "string" && settings.theme.trim() ? settings.theme.trim() : undefined;
 }
 
 function readFooterPreset(): FooterPreset {
+  const custom = readCustomConfig();
+  const ui = readUiConfig(custom);
+  if (isFooterPreset(ui.footerPreset)) {
+    return ui.footerPreset;
+  }
+
   const settings = readSettings();
-  const value = settings[FOOTER_PRESET_SETTING_KEY];
-  return isFooterPreset(value) ? value : "default";
+  const legacyPreset = settings[LEGACY_FOOTER_PRESET_SETTING_KEY];
+  return isFooterPreset(legacyPreset) ? legacyPreset : "default";
 }
 
 function persistTheme(name: string) {
-  try {
-    mkdirSync(PI_AGENT_DIR, { recursive: true });
-    const settings = readSettings();
-    settings.theme = name;
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
-  } catch {
-    // best effort only
-  }
+  const config = readCustomConfig();
+  const ui = readUiConfig(config);
+  ui.theme = name;
+  config.ui = ui;
+  writeCustomConfig(config);
 }
 
 function persistFooterPreset(preset: FooterPreset) {
-  try {
-    mkdirSync(PI_AGENT_DIR, { recursive: true });
-    const settings = readSettings();
-    settings[FOOTER_PRESET_SETTING_KEY] = preset;
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
-  } catch {
-    // best effort only
+  const config = readCustomConfig();
+  const ui = readUiConfig(config);
+  ui.footerPreset = preset;
+  config.ui = ui;
+  writeCustomConfig(config);
+}
+
+function applySavedTheme(ctx: ExtensionContext) {
+  if (!ctx.hasUI) return;
+
+  const savedTheme = readSavedThemeName();
+  if (!savedTheme || savedTheme === ctx.ui.theme.name) return;
+
+  const result = ctx.ui.setTheme(savedTheme);
+  if (!result.success) {
+    ctx.ui.notify(`Saved theme not found: ${savedTheme}`, "warning");
   }
 }
 
@@ -427,6 +480,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     lastCtx = ctx;
     footerPreset = readFooterPreset();
+    applySavedTheme(ctx);
     showBanner(ctx);
     installFooter(pi, ctx, footerPreset);
     updateThemeStatus(ctx);

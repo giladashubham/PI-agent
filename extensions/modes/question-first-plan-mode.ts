@@ -83,17 +83,36 @@ Do not ask more clarifying questions in this turn.
 Include a "Plan:" header followed by numbered steps.
 `;
 
-const PLAN_MODE_CONFIG_PATH = join(homedir(), ".pi", "agent", "plan-mode.json");
+const CUSTOM_CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-agent-custom.json");
+const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
+const PLAN_MODE_LEGACY_CONFIG_PATH = join(homedir(), ".pi", "agent", "plan-mode.json");
 const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
 
-function loadPlanModeConfig(): PlanModeConfig {
+function readJsonObject(path: string): Record<string, unknown> | undefined {
   try {
-    if (!existsSync(PLAN_MODE_CONFIG_PATH)) return {};
-    const parsed = JSON.parse(readFileSync(PLAN_MODE_CONFIG_PATH, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as PlanModeConfig) : {};
+    if (!existsSync(path)) return undefined;
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
   } catch {
-    return {};
+    return undefined;
   }
+}
+
+function loadPlanModeConfig(): PlanModeConfig {
+  const customConfig = readJsonObject(CUSTOM_CONFIG_PATH);
+  const customPlanMode = customConfig?.planMode;
+  if (customPlanMode && typeof customPlanMode === "object" && !Array.isArray(customPlanMode)) {
+    return customPlanMode as PlanModeConfig;
+  }
+
+  const settings = readJsonObject(SETTINGS_PATH);
+  const settingsConfig = settings?.planMode;
+  if (settingsConfig && typeof settingsConfig === "object" && !Array.isArray(settingsConfig)) {
+    return settingsConfig as PlanModeConfig;
+  }
+
+  const legacy = readJsonObject(PLAN_MODE_LEGACY_CONFIG_PATH);
+  return (legacy as PlanModeConfig | undefined) ?? {};
 }
 
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
