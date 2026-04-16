@@ -176,7 +176,7 @@ function showThemeSwatch(
           theme.fg("muted", block),
           theme.fg("dim", block),
         ].join(" ");
-        const label = `${theme.fg("accent", " Theme ")}${theme.fg("muted", ctx.ui.theme.name)}  ${swatch}`;
+        const label = `${theme.fg("accent", " Theme ")}${theme.fg("muted", ctx.ui.theme.name ?? "(unknown)")}  ${swatch}`;
         const border = theme.fg("borderMuted", "─".repeat(Math.max(0, width)));
         return [border, truncateToWidth("  " + label, width), border];
       },

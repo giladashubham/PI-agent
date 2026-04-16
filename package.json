@@ -2,6 +2,7 @@
   "name": "pi-custom-bundle-shubham",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Custom Pi package bundle with extensions, skills, themes, and web_fetch",
   "type": "module",
   "keywords": [
@@ -39,6 +40,7 @@
   "devDependencies": {
     "@eslint/js": "^9.26.0",
     "@types/node": "^24.0.0",
+    "@types/picomatch": "^4.0.3",
     "eslint": "^9.26.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3",

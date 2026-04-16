@@ -222,4 +222,4 @@ For batch mode, each URL runs through this pipeline independently with its own b
 
 ## License
 
-MIT
+MIT — see the repository root [LICENSE](../../LICENSE).

@@ -142,3 +142,7 @@ npm run test:ci
 - Pi extension entrypoints are declared in root `package.json` under `pi.extensions`.
 - `tools/web-fetch/index.ts` is the active web-fetch entrypoint.
 - Legacy pre-reorg paths were removed; use structured folders as the source of truth.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

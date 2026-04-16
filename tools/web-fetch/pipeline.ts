@@ -57,7 +57,7 @@ export function createWebFetchPipeline(deps: PipelineDeps) {
     onUpdate?: ToolUpdateFn,
   ): Promise<any> {
     const urlResult = validateAndNormalizeUrl(rawUrl);
-    if (urlResult.error) {
+    if ("error" in urlResult) {
       return { content: [{ type: "text", text: urlResult.error }], isError: true };
     }
     const url = urlResult.url;
