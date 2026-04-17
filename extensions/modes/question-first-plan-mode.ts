@@ -661,7 +661,7 @@ class PlanOverlayComponent {
   }
 }
 
-async function showPlanOverlay(ctx: ExtensionContext, title: string, markdownContent: string, filePath?: string): Promise<void> {
+async function _showPlanOverlay(ctx: ExtensionContext, title: string, markdownContent: string, filePath?: string): Promise<void> {
   if (!ctx.hasUI) return;
 
   await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
@@ -1141,11 +1141,16 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
         return;
       }
 
-      // Extract title from frontmatter
       const titleMatch = content.match(/^title:\s*"(.+)"/m);
       const title = titleMatch ? titleMatch[1] : "Plan";
+      const split = splitFrontmatter(content);
+      const body = split.body.trim() || content;
 
-      await showPlanOverlay(ctx, title, content, currentPlanPath);
+      pi.sendMessage({
+        customType: "plan-mode-planview",
+        content: `## ${title}\n\n${body}\n\n---\n📄 ${currentPlanPath}`,
+        display: true,
+      });
     },
   });
 
@@ -1252,18 +1257,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
     if (phase !== "plan") return;
 
-    // If a plan was written via write_plan tool, show it
-    if (currentPlanPath) {
-      const planContent = readPlanArtifact(currentPlanPath);
-      if (planContent) {
-        const titleMatch = planContent.match(/^title:\s*"(.+)"/m);
-        const title = titleMatch ? titleMatch[1] : "Plan";
-
-        // Show the plan overlay
-        await showPlanOverlay(ctx, title, planContent, currentPlanPath);
-      }
-    }
-
+    const planContent = currentPlanPath ? readPlanArtifact(currentPlanPath) : null;
     const steps = extractPlanSteps(lastAssistantText);
     if (steps.length === 0 && !currentPlanPath) return;
 
@@ -1271,6 +1265,18 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     const fingerprint = steps.length > 0 ? planFingerprint(steps) : currentPlanPath;
     if (!fingerprint || fingerprint === lastPromptedPlan) return;
     lastPromptedPlan = fingerprint;
+
+    if (planContent && currentPlanPath) {
+      const titleMatch = planContent.match(/^title:\s*"(.+)"/m);
+      const title = titleMatch ? titleMatch[1] : "Plan";
+      const split = splitFrontmatter(planContent);
+      const body = split.body.trim() || planContent;
+      pi.sendMessage({
+        customType: "plan-mode-rendered-plan",
+        content: `## ${title}\n\n${body}\n\n---\n📄 ${currentPlanPath}`,
+        display: true,
+      });
+    }
 
     const choices = ["Implement now (exit plan mode)", "Stay in plan mode", "Refine the plan"];
     const choice = await ctx.ui.select("Plan ready — what next?", choices);
@@ -1282,16 +1288,6 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       }
       await disablePlanMode(ctx, { restoreModelProfile: false });
       await applyModeProfile(ctx, "implement");
-
-      // Show plan overlay before implementing
-      if (currentPlanPath) {
-        const content = readPlanArtifact(currentPlanPath);
-        if (content) {
-          const titleMatch = content.match(/^title:\s*"(.+)"/m);
-          const title = titleMatch ? titleMatch[1] : "Plan";
-          await showPlanOverlay(ctx, title, content, currentPlanPath);
-        }
-      }
 
       pi.sendMessage(
         { customType: "plan-mode-implement", content: "Implement the approved plan now.", display: true },
