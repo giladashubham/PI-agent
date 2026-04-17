@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { Markdown, Text } from "@mariozechner/pi-tui";
+import { Text } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -307,369 +306,6 @@ function splitFrontmatter(markdownContent: string): { frontmatter?: string; body
   return { frontmatter, body: body.trimStart() };
 }
 
-function collapseMarkdownSections(markdownContent: string): string {
-  const lines = markdownContent.replace(/\r\n/g, "\n").split("\n");
-  const headingIndices: number[] = [];
-
-  for (let i = 0; i < lines.length; i += 1) {
-    if (/^#{1,6}\s+/.test(lines[i])) {
-      headingIndices.push(i);
-    }
-  }
-
-  if (headingIndices.length === 0) {
-    return markdownContent;
-  }
-
-  const output: string[] = [];
-  let cursor = 0;
-
-  for (let i = 0; i < headingIndices.length; i += 1) {
-    const headingIndex = headingIndices[i];
-    const nextHeadingIndex = i + 1 < headingIndices.length ? headingIndices[i + 1] : lines.length;
-
-    while (cursor < headingIndex) {
-      output.push(lines[cursor]);
-      cursor += 1;
-    }
-
-    output.push(lines[headingIndex]);
-    const hiddenLines = Math.max(0, nextHeadingIndex - headingIndex - 1);
-    if (hiddenLines > 0) {
-      output.push(`> … collapsed ${hiddenLines} line${hiddenLines === 1 ? "" : "s"}`);
-    }
-    cursor = nextHeadingIndex;
-  }
-
-  while (cursor < lines.length) {
-    output.push(lines[cursor]);
-    cursor += 1;
-  }
-
-  return output.join("\n");
-}
-
-/**
- * Plan overlay component — scrollable Markdown viewer with Escape to close.
- */
-class PlanOverlayComponent {
-  private md: Markdown;
-  private title: string;
-  private filePath: string | undefined;
-  private fullContent: string;
-  private bodyContent: string;
-  private hasFrontmatter: boolean;
-  private showFrontmatter = false;
-  private collapseSections = false;
-  private wrapEnabled = true;
-  private horizontalOffset = 0;
-  private searchMode = false;
-  private searchBuffer = "";
-  private searchQuery = "";
-  private matchIndices: number[] = [];
-  private activeMatchIndex = -1;
-  private needsSearchRecompute = false;
-  private scrollOffset = 0;
-  private maxScrollOffset = 0;
-  private viewportHeight = 1;
-  private lastWidth?: number;
-  private lastRenderedLines: string[] = [];
-  private done: () => void;
-  private requestRenderFn: (() => void) | undefined;
-  private getTerminalRows: () => number;
-
-  constructor(
-    title: string,
-    markdownContent: string,
-    filePath: string | undefined,
-    done: () => void,
-    getTerminalRows: () => number,
-  ) {
-    this.title = title;
-    this.filePath = filePath;
-    this.done = done;
-    this.getTerminalRows = getTerminalRows;
-
-    const split = splitFrontmatter(markdownContent);
-    this.fullContent = markdownContent;
-    this.bodyContent = split.body;
-    this.hasFrontmatter = Boolean(split.frontmatter);
-    this.md = new Markdown(this.bodyContent, 1, 1, getMarkdownTheme());
-    this.needsSearchRecompute = true;
-  }
-
-  private activeContentLabel(): string {
-    if (!this.hasFrontmatter) return "content";
-    return this.showFrontmatter ? "frontmatter: visible" : "frontmatter: hidden";
-  }
-
-  private activeRawContent(): string {
-    const base = this.showFrontmatter ? this.fullContent : this.bodyContent;
-    return this.collapseSections ? collapseMarkdownSections(base) : base;
-  }
-
-  private rebuildMarkdown(): void {
-    this.md = new Markdown(this.activeRawContent(), 1, 1, getMarkdownTheme());
-    this.lastWidth = undefined;
-  }
-
-  private searchStatus(): string {
-    if (!this.searchQuery) return "search: off";
-    const total = this.matchIndices.length;
-    if (total === 0) return `search: "${this.searchQuery}" (no matches)`;
-    return `search: "${this.searchQuery}" (${this.activeMatchIndex + 1}/${total})`;
-  }
-
-  private computeMatches(lines: string[]): void {
-    this.matchIndices = [];
-    this.activeMatchIndex = -1;
-
-    const query = this.searchQuery.trim().toLowerCase();
-    if (!query) return;
-
-    for (let i = 0; i < lines.length; i += 1) {
-      if (lines[i].toLowerCase().includes(query)) {
-        this.matchIndices.push(i);
-      }
-    }
-
-    if (this.matchIndices.length > 0) {
-      this.activeMatchIndex = 0;
-      this.scrollToLine(this.matchIndices[0]);
-    }
-  }
-
-  private scrollToLine(lineIndex: number): void {
-    const target = Math.max(0, lineIndex - Math.floor(this.viewportHeight / 3));
-    this.scrollOffset = Math.min(this.maxScrollOffset, target);
-  }
-
-  private jumpToMatch(direction: 1 | -1): void {
-    if (this.matchIndices.length === 0) return;
-    if (this.activeMatchIndex < 0) {
-      this.activeMatchIndex = 0;
-    } else {
-      const next = this.activeMatchIndex + direction;
-      const wrapped = next < 0 ? this.matchIndices.length - 1 : next >= this.matchIndices.length ? 0 : next;
-      this.activeMatchIndex = wrapped;
-    }
-    this.scrollToLine(this.matchIndices[this.activeMatchIndex]);
-    this.requestRenderFn?.();
-  }
-
-  private enterSearchMode(): void {
-    this.searchMode = true;
-    this.searchBuffer = this.searchQuery;
-    this.requestRenderFn?.();
-  }
-
-  private setSearchQuery(nextQuery: string): void {
-    this.searchQuery = nextQuery.trim();
-    this.needsSearchRecompute = true;
-  }
-
-  private switchContent(showFrontmatter: boolean): void {
-    if (!this.hasFrontmatter) return;
-    if (this.showFrontmatter === showFrontmatter) return;
-
-    this.showFrontmatter = showFrontmatter;
-    this.rebuildMarkdown();
-    this.horizontalOffset = 0;
-    this.needsSearchRecompute = true;
-    this.requestRenderFn?.();
-  }
-
-  private toggleSectionCollapse(): void {
-    this.collapseSections = !this.collapseSections;
-    this.rebuildMarkdown();
-    this.needsSearchRecompute = true;
-    this.requestRenderFn?.();
-  }
-
-  private toggleWrap(): void {
-    this.wrapEnabled = !this.wrapEnabled;
-    this.horizontalOffset = 0;
-    this.lastWidth = undefined;
-    this.needsSearchRecompute = true;
-    this.requestRenderFn?.();
-  }
-
-  private renderContentLines(width: number): string[] {
-    if (this.wrapEnabled) {
-      this.rebuildMarkdown();
-      return this.md.render(Math.max(1, width - 2));
-    }
-
-    const rawLines = this.activeRawContent().replace(/\r\n/g, "\n").split("\n");
-    const viewWidth = Math.max(1, width - 2);
-    return rawLines.map((line) => {
-      const start = Math.max(0, this.horizontalOffset);
-      return line.slice(start, start + viewWidth);
-    });
-  }
-
-  render(width: number): string[] {
-    if (this.lastWidth !== width) {
-      this.lastWidth = width;
-      this.scrollOffset = 0;
-      this.horizontalOffset = 0;
-    }
-
-    const header = [this.title, "─".repeat(width)];
-    const renderedLines = this.renderContentLines(width);
-    this.lastRenderedLines = renderedLines;
-
-    if (this.needsSearchRecompute && !this.searchMode) {
-      this.computeMatches(renderedLines);
-      this.needsSearchRecompute = false;
-    }
-
-    const overlayHeight = Math.max(8, Math.floor(this.getTerminalRows() * 0.9));
-    const fixedFooterLineCount = 3;
-    this.viewportHeight = Math.max(1, overlayHeight - header.length - fixedFooterLineCount);
-
-    this.maxScrollOffset = Math.max(0, renderedLines.length - this.viewportHeight);
-    this.scrollOffset = Math.min(this.maxScrollOffset, Math.max(0, this.scrollOffset));
-
-    const start = this.scrollOffset;
-    const end = Math.min(renderedLines.length, start + this.viewportHeight);
-    const visibleLines = renderedLines.slice(start, end);
-
-    const rangeStart = renderedLines.length === 0 ? 0 : start + 1;
-    const rangeEnd = renderedLines.length === 0 ? 0 : end;
-    const percent = this.maxScrollOffset <= 0 ? 100 : Math.round((this.scrollOffset / this.maxScrollOffset) * 100);
-    const positionText = `${rangeStart}-${rangeEnd}/${renderedLines.length} · ${percent}%`;
-    const viewMode = `${this.activeContentLabel()} · ${this.collapseSections ? "sections: folded" : "sections: expanded"} · ${this.wrapEnabled ? "wrap: on" : `wrap: off (x:${this.horizontalOffset})`}`;
-
-    const footer = [
-      "─".repeat(width),
-      this.filePath ? `📄 ${this.filePath}  (${positionText})  ·  ${viewMode}  ·  ${this.searchStatus()}` : `(${positionText})  ·  ${viewMode}  ·  ${this.searchStatus()}`,
-      this.searchMode
-        ? `Search: ${this.searchBuffer}  (Enter apply · Esc cancel · Backspace edit)`
-        : "↑/↓ scroll · PgUp/PgDn · g/G top/bottom · / search · n/N next/prev · f frontmatter · z fold · w wrap · Esc close",
-    ];
-
-    return [...header, ...visibleLines, ...footer];
-  }
-
-  handleInput(data: string): void {
-    if (this.searchMode) {
-      if (data === "\x1b") {
-        this.searchMode = false;
-        this.searchBuffer = "";
-        this.requestRenderFn?.();
-        return;
-      }
-      if (data === "\r") {
-        this.searchMode = false;
-        this.setSearchQuery(this.searchBuffer);
-        this.searchBuffer = "";
-        this.requestRenderFn?.();
-        return;
-      }
-      if (data === "\x7f") {
-        this.searchBuffer = this.searchBuffer.slice(0, -1);
-        this.requestRenderFn?.();
-        return;
-      }
-      if (data.length === 1 && data >= " " && data <= "~") {
-        this.searchBuffer += data;
-        this.requestRenderFn?.();
-      }
-      return;
-    }
-
-    if (data === "\x1b" || data === "\r") {
-      this.done();
-      return;
-    }
-    if (data === "\x1b[A" || data === "k") {
-      this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "\x1b[B" || data === "j") {
-      this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 1);
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "\x1b[5~") {
-      this.scrollOffset = Math.max(0, this.scrollOffset - 10);
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "\x1b[6~") {
-      this.scrollOffset = Math.min(this.maxScrollOffset, this.scrollOffset + 10);
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "g") {
-      this.scrollOffset = 0;
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "G") {
-      this.scrollOffset = this.maxScrollOffset;
-      this.requestRenderFn?.();
-      return;
-    }
-    if (data === "/") {
-      this.enterSearchMode();
-      return;
-    }
-    if (data === "n") {
-      this.jumpToMatch(1);
-      return;
-    }
-    if (data === "N") {
-      this.jumpToMatch(-1);
-      return;
-    }
-    if (data === "f") {
-      this.switchContent(!this.showFrontmatter);
-      return;
-    }
-    if (data === "z") {
-      this.toggleSectionCollapse();
-      return;
-    }
-    if (data === "w") {
-      this.toggleWrap();
-      return;
-    }
-
-    if (!this.wrapEnabled) {
-      if (data === "\x1b[D" || data === "h") {
-        this.horizontalOffset = Math.max(0, this.horizontalOffset - 8);
-        this.requestRenderFn?.();
-        return;
-      }
-      if (data === "\x1b[C" || data === "l") {
-        this.horizontalOffset += 8;
-        this.requestRenderFn?.();
-      }
-    }
-  }
-
-  invalidate(): void {
-    this.md.invalidate();
-    this.lastWidth = undefined;
-  }
-
-  setRequestRender(fn: () => void): void {
-    this.requestRenderFn = fn;
-  }
-}
-
-async function showPlanOverlay(ctx: ExtensionContext, title: string, markdownContent: string, filePath?: string): Promise<void> {
-  if (!ctx.hasUI) return;
-
-  await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
-    const component = new PlanOverlayComponent(title, markdownContent, filePath, done, () => tui.terminal.rows);
-    component.setRequestRender(() => tui.requestRender());
-    return component;
-  }, { overlay: true, overlayOptions: { width: "90%", maxHeight: "90%", anchor: "center" } });
-}
 
 export default function questionFirstPlanMode(pi: ExtensionAPI) {
   let enabled = false;
@@ -1141,11 +777,16 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
         return;
       }
 
-      // Extract title from frontmatter
       const titleMatch = content.match(/^title:\s*"(.+)"/m);
       const title = titleMatch ? titleMatch[1] : "Plan";
+      const split = splitFrontmatter(content);
+      const body = split.body.trim() || content;
 
-      await showPlanOverlay(ctx, title, content, currentPlanPath);
+      pi.sendMessage({
+        customType: "plan-mode-planview",
+        content: `## ${title}\n\n${body}\n\n---\n📄 ${currentPlanPath}`,
+        display: true,
+      });
     },
   });
 
@@ -1252,18 +893,7 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
 
     if (phase !== "plan") return;
 
-    // If a plan was written via write_plan tool, show it
-    if (currentPlanPath) {
-      const planContent = readPlanArtifact(currentPlanPath);
-      if (planContent) {
-        const titleMatch = planContent.match(/^title:\s*"(.+)"/m);
-        const title = titleMatch ? titleMatch[1] : "Plan";
-
-        // Show the plan overlay
-        await showPlanOverlay(ctx, title, planContent, currentPlanPath);
-      }
-    }
-
+    const planContent = currentPlanPath ? readPlanArtifact(currentPlanPath) : null;
     const steps = extractPlanSteps(lastAssistantText);
     if (steps.length === 0 && !currentPlanPath) return;
 
@@ -1271,6 +901,18 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
     const fingerprint = steps.length > 0 ? planFingerprint(steps) : currentPlanPath;
     if (!fingerprint || fingerprint === lastPromptedPlan) return;
     lastPromptedPlan = fingerprint;
+
+    if (planContent && currentPlanPath) {
+      const titleMatch = planContent.match(/^title:\s*"(.+)"/m);
+      const title = titleMatch ? titleMatch[1] : "Plan";
+      const split = splitFrontmatter(planContent);
+      const body = split.body.trim() || planContent;
+      pi.sendMessage({
+        customType: "plan-mode-rendered-plan",
+        content: `## ${title}\n\n${body}\n\n---\n📄 ${currentPlanPath}`,
+        display: true,
+      });
+    }
 
     const choices = ["Implement now (exit plan mode)", "Stay in plan mode", "Refine the plan"];
     const choice = await ctx.ui.select("Plan ready — what next?", choices);
@@ -1282,16 +924,6 @@ export default function questionFirstPlanMode(pi: ExtensionAPI) {
       }
       await disablePlanMode(ctx, { restoreModelProfile: false });
       await applyModeProfile(ctx, "implement");
-
-      // Show plan overlay before implementing
-      if (currentPlanPath) {
-        const content = readPlanArtifact(currentPlanPath);
-        if (content) {
-          const titleMatch = content.match(/^title:\s*"(.+)"/m);
-          const title = titleMatch ? titleMatch[1] : "Plan";
-          await showPlanOverlay(ctx, title, content, currentPlanPath);
-        }
-      }
 
       pi.sendMessage(
         { customType: "plan-mode-implement", content: "Implement the approved plan now.", display: true },
