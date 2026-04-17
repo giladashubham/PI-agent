@@ -105,7 +105,7 @@ Current keys used by this bundle:
 
 - `planMode` — plan mode model/thinking profiles
 - `webFetch` — web-fetch model/timeouts/extensions settings
-- `ui.theme` and `ui.footerPreset` — custom core UI preferences
+- `ui.theme`, `ui.footerPreset`, and `ui.banner` — custom core UI preferences
 
 ## Plan mode model/thinking config
 

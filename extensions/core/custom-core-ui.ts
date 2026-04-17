@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { basename, dirname, join } from "node:path";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { CURSOR_MARKER, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { basename, dirname, join, relative } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
@@ -16,9 +16,73 @@ const SETTINGS_PATH = join(PI_AGENT_DIR, "settings.json");
 const CUSTOM_CONFIG_PATH = join(PI_AGENT_DIR, "pi-agent-custom.json");
 const BANNER_PATHS = [join(PI_AGENT_DIR, "agent-banner.txt"), join(homedir(), "Desktop", "agent.txt")];
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
-const FOOTER_PRESETS = ["default", "minimal", "compact"] as const;
+const DEFAULT_THEME_NAME = "codex-black";
+const INPUT_BG = "\x1b[48;2;18;18;18m";
+const INPUT_FG = "\x1b[38;2;230;237;243m";
+const INPUT_DIM = "\x1b[38;2;110;118;129m";
+const INPUT_ACCENT = "\x1b[38;2;88;166;255m";
+const ANSI_RESET = "\x1b[0m";
+const INPUT_PLACEHOLDER = "Type @ to mention files, / for commands";
+const FOOTER_PRESETS = ["default", "minimal", "compact", "codex"] as const;
 type FooterPreset = (typeof FOOTER_PRESETS)[number];
+const DEFAULT_FOOTER_PRESET: FooterPreset = "codex";
 const LEGACY_FOOTER_PRESET_SETTING_KEY = "customCoreUiFooterPreset";
+const LEGACY_BANNER_SETTING_KEY = "customCoreUiBanner";
+const CHANGED_FILES_WIDGET_KEY = "custom-core-ui-changed-files";
+const MAX_RECENT_CHANGED_FILES = 6;
+
+function ansi(color: string, text: string): string {
+  return `${color}${text}${ANSI_RESET}`;
+}
+
+function styleInputBar(content: string, width: number): string {
+  const safeWidth = Math.max(1, width);
+  const normalized = `${INPUT_FG}${content}`.replaceAll("\x1b[0m", `${ANSI_RESET}${INPUT_BG}${INPUT_FG}`);
+  const padded = truncateToWidth(normalized, safeWidth, "");
+  const pad = " ".repeat(Math.max(0, safeWidth - visibleWidth(padded)));
+  return `${INPUT_BG}${padded}${pad}${ANSI_RESET}`;
+}
+
+function stripTerminalCodes(text: string): string {
+  return text
+    .replaceAll(CURSOR_MARKER, "")
+    .replace(/\x1b\][^\x07]*\x07/g, "")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function isEditorBorderLine(line: string): boolean {
+  const plain = stripTerminalCodes(line).trim();
+  return /^─+$/.test(plain) || /^─── [↑↓] \d+ more ─*$/.test(plain);
+}
+
+class ScreenshotInputEditor extends CustomEditor {
+  override render(width: number): string[] {
+    const innerWidth = Math.max(1, width - 4);
+    const rawLines = super.render(innerWidth);
+    const contentLines = rawLines.filter((line) => !isEditorBorderLine(line));
+    const prefix = `${ansi(INPUT_ACCENT, "❯")} `;
+
+    if (!this.getText() && !this.isShowingAutocomplete()) {
+      const marker = this.focused ? CURSOR_MARKER : "";
+      const cursor = this.focused ? "\x1b[7m \x1b[0m" : "";
+      const placeholder = ansi(INPUT_DIM, INPUT_PLACEHOLDER);
+      return [
+        styleInputBar("", width),
+        styleInputBar(` ${prefix}${marker}${cursor}${placeholder}`, width),
+        styleInputBar("", width),
+      ];
+    }
+
+    const lines = [styleInputBar("", width)];
+    const visibleLines = contentLines.length > 0 ? contentLines : [""];
+    for (let i = 0; i < visibleLines.length; i++) {
+      const line = i === 0 ? ` ${prefix}${visibleLines[i]}` : `   ${visibleLines[i]}`;
+      lines.push(styleInputBar(line, width));
+    }
+    lines.push(styleInputBar("", width));
+    return lines;
+  }
+}
 
 function loadBannerArt(): string {
   for (const path of BANNER_PATHS) {
@@ -52,6 +116,124 @@ function showBanner(ctx: ExtensionContext) {
 function hideBanner(ctx: ExtensionContext | undefined) {
   if (!ctx?.hasUI) return;
   ctx.ui.setWidget("custom-core-ui-banner", undefined);
+}
+
+type ChangedFileOperation = "edit" | "write";
+
+interface ChangedFileEntry {
+  path: string;
+  op: ChangedFileOperation;
+  count: number;
+  added: number;
+  removed: number;
+}
+
+function formatChangedFilePath(cwd: string, path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return trimmed;
+  if (!trimmed.startsWith("/")) return trimmed.replace(/\\/g, "/");
+
+  const relPath = relative(cwd, trimmed).replace(/\\/g, "/");
+  if (!relPath || relPath === ".") return basename(trimmed);
+  return relPath.startsWith("../") ? trimmed : relPath;
+}
+
+function countContentLines(content: string): number {
+  if (!content) return 0;
+  return content.split("\n").length;
+}
+
+function parseDiffStats(diff: string | undefined): { added: number; removed: number } {
+  if (!diff) return { added: 0, removed: 0 };
+
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@")) continue;
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+
+  return { added, removed };
+}
+
+function upsertChangedFile(
+  entries: ChangedFileEntry[],
+  path: string,
+  op: ChangedFileOperation,
+  stats: { added?: number; removed?: number } = {},
+): ChangedFileEntry[] {
+  const normalizedPath = path.trim();
+  if (!normalizedPath) return entries;
+
+  const next = [...entries];
+  const existingIndex = next.findIndex((entry) => entry.path === normalizedPath);
+  const existing = existingIndex >= 0 ? next.splice(existingIndex, 1)[0] : undefined;
+  next.unshift({
+    path: normalizedPath,
+    op,
+    count: (existing?.count || 0) + 1,
+    added: (existing?.added || 0) + (stats.added || 0),
+    removed: (existing?.removed || 0) + (stats.removed || 0),
+  });
+  return next.slice(0, MAX_RECENT_CHANGED_FILES);
+}
+
+function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEntry[]) {
+  if (!ctx.hasUI) return;
+
+  if (entries.length === 0) {
+    ctx.ui.setWidget(CHANGED_FILES_WIDGET_KEY, undefined);
+    return;
+  }
+
+  ctx.ui.setWidget(
+    CHANGED_FILES_WIDGET_KEY,
+    (_tui, theme) => ({
+      invalidate() {},
+      render(width: number): string[] {
+        const lines: string[] = [];
+        let topRow = "";
+        let midRow = "";
+        let bottomRow = "";
+
+        const flush = () => {
+          if (!topRow) return;
+          lines.push(topRow, midRow, bottomRow);
+          topRow = "";
+          midRow = "";
+          bottomRow = "";
+        };
+
+        for (const entry of entries) {
+          const added = entry.added > 0 ? theme.fg("success", `+${entry.added}`) : "";
+          const removed = entry.removed > 0 ? theme.fg("error", `-${entry.removed}`) : "";
+          const repeats = entry.count > 1 ? theme.fg("dim", ` ×${entry.count}`) : "";
+          const stats = [added, removed].filter(Boolean).join(" ");
+          const content = [` ${entry.path}`, stats ? ` ${stats}` : "", repeats, " "].join("");
+          const contentWidth = visibleWidth(content);
+          const chipTop = theme.fg("borderMuted", `╭${"─".repeat(contentWidth)}╮`);
+          const chipMid = `${theme.fg("borderMuted", "│")}${content}${theme.fg("borderMuted", "│")}`;
+          const chipBottom = theme.fg("borderMuted", `╰${"─".repeat(contentWidth)}╯`);
+          const separator = topRow ? " " : "";
+          const nextWidth = visibleWidth(topRow) + visibleWidth(separator) + visibleWidth(chipTop);
+
+          if (topRow && nextWidth > width) {
+            flush();
+          }
+
+          const joiner = topRow ? " " : "";
+          topRow += joiner + chipTop;
+          midRow += joiner + chipMid;
+          bottomRow += joiner + chipBottom;
+        }
+
+        flush();
+        return lines.map((line) => truncateToWidth(line, width));
+      },
+    }),
+    { placement: "belowEditor" },
+  );
 }
 
 function shortModelName(name: string | undefined): string {
@@ -212,6 +394,7 @@ function resolveFooterSegments(
   };
 
   let left: FooterSegment[];
+  let right: FooterSegment[] = [thinkingSegment];
   switch (preset) {
     case "minimal":
       left = [dirSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
@@ -219,13 +402,16 @@ function resolveFooterSegments(
     case "compact":
       left = [modelSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
       break;
+    case "codex":
+      left = [dirSegment, gitSegment].filter((segment): segment is FooterSegment => segment !== null);
+      right = [modelSegment, contextSegment, thinkingSegment];
+      break;
     case "default":
     default:
       left = [modelSegment, gitSegment, contextSegment, dirSegment].filter((segment): segment is FooterSegment => segment !== null);
       break;
   }
 
-  const right: FooterSegment[] = [thinkingSegment];
   if (parts.planActive) {
     right.push({ text: `${parts.glyphs.plan} PLAN`, color: "warning", bold: true });
   }
@@ -351,7 +537,11 @@ function readSavedThemeName(): string | undefined {
   }
 
   const settings = readSettings();
-  return typeof settings.theme === "string" && settings.theme.trim() ? settings.theme.trim() : undefined;
+  if (typeof settings.theme === "string" && settings.theme.trim()) {
+    return settings.theme.trim();
+  }
+
+  return DEFAULT_THEME_NAME;
 }
 
 function readFooterPreset(): FooterPreset {
@@ -363,7 +553,18 @@ function readFooterPreset(): FooterPreset {
 
   const settings = readSettings();
   const legacyPreset = settings[LEGACY_FOOTER_PRESET_SETTING_KEY];
-  return isFooterPreset(legacyPreset) ? legacyPreset : "default";
+  return isFooterPreset(legacyPreset) ? legacyPreset : DEFAULT_FOOTER_PRESET;
+}
+
+function readBannerEnabled(): boolean {
+  const custom = readCustomConfig();
+  const ui = readUiConfig(custom);
+  if (typeof ui.banner === "boolean") {
+    return ui.banner;
+  }
+
+  const settings = readSettings();
+  return typeof settings[LEGACY_BANNER_SETTING_KEY] === "boolean" ? Boolean(settings[LEGACY_BANNER_SETTING_KEY]) : false;
 }
 
 function persistTheme(name: string) {
@@ -465,6 +666,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
   let lastCtx: ExtensionContext | undefined;
   let swatchTimer: ReturnType<typeof setTimeout> | null = null;
   let footerPreset: FooterPreset = readFooterPreset();
+  let changedFiles: ChangedFileEntry[] = [];
 
   const clearSwatchTimer = () => {
     if (swatchTimer) {
@@ -480,10 +682,32 @@ export default function customCoreUi(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     lastCtx = ctx;
     footerPreset = readFooterPreset();
+    changedFiles = [];
     applySavedTheme(ctx);
-    showBanner(ctx);
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => new ScreenshotInputEditor(tui, theme, keybindings));
+    if (readBannerEnabled()) showBanner(ctx);
+    else hideBanner(ctx);
+    renderChangedFilesWidget(ctx, changedFiles);
     installFooter(pi, ctx, footerPreset);
     updateThemeStatus(ctx);
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    lastCtx = ctx;
+    if (!ctx.hasUI || event.isError) return;
+    if (event.toolName !== "edit" && event.toolName !== "write") return;
+
+    const rawPath = event.input.path;
+    if (typeof rawPath !== "string" || !rawPath.trim()) return;
+
+    const path = formatChangedFilePath(ctx.cwd, rawPath);
+    const stats =
+      event.toolName === "edit"
+        ? parseDiffStats((event.details as { diff?: string } | undefined)?.diff)
+        : { added: countContentLines(typeof event.input.content === "string" ? event.input.content : ""), removed: 0 };
+
+    changedFiles = upsertChangedFile(changedFiles, path, event.toolName, stats);
+    renderChangedFilesWidget(ctx, changedFiles);
   });
 
   pi.on("input", async () => {
@@ -507,7 +731,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("statusbar", {
-    description: "Set status bar preset: /statusbar [default|minimal|compact]",
+    description: "Set status bar preset: /statusbar [default|minimal|compact|codex]",
     handler: async (args, ctx) => {
       lastCtx = ctx;
       if (!ctx.hasUI) return;

@@ -30,6 +30,9 @@
     ],
     "skills": [
       "./skills"
+    ],
+    "themes": [
+      "./themes"
     ]
   },
   "dependencies": {
