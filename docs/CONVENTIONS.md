@@ -5,7 +5,7 @@
 - `extensions/<domain>/*.ts` for extension entrypoints
 - `tools/<tool-name>/index.ts` for tool entrypoint extensions
 - `tools/<tool-name>/*.ts` for internal modules (pure helpers preferred)
-- `skills/<skill-name>/SKILL.md` for Agent Skills
+- `skills/<skill-name>/SKILL.md` for optional Agent Skills
 - `docs/*.md` for architecture and operational documentation
 
 ## Entry points
@@ -16,7 +16,7 @@
 ## Naming
 
 - Files: kebab-case (`question-first-plan-mode.ts`)
-- Skills: directory name must match `frontmatter.name`
+- Skills (when present): directory name must match `frontmatter.name`
 - Constants: UPPER_SNAKE_CASE
 - Internal pure helpers: verb-first where possible (`formatBatchResults`, `expandHomePath`)
 

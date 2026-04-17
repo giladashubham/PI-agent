@@ -5,7 +5,7 @@
 This package is a **Pi bundle** that ships:
 
 - runtime extensions (`extensions/**` + tool entrypoints)
-- reusable skills (`skills/**`)
+- themes (`themes/**`)
 
 Design goals:
 
@@ -21,11 +21,11 @@ Pi loads resources from `package.json`:
   - `extensions/core/env-loader.ts`
   - `extensions/core/custom-core-ui.ts`
   - `extensions/modes/question-first-plan-mode.ts`
-  - `extensions/policies/karpathy-guidelines.ts`
+  - `extensions/policies/custom-system-prompt.ts`
   - `extensions/providers/opencode-free-models.ts`
   - `extensions/providers/opencode-go-models.ts`
   - `tools/web-fetch/index.ts`
-- Skills: `skills/`
+- Themes: `themes/`
 
 ## Directory ownership
 
@@ -44,7 +44,7 @@ Conversation-flow control and operational mode behavior.
 
 ## `extensions/policies/`
 
-Prompt-level behavioral constraints and operating principles.
+Prompt-level behavior injected into Pi's built-in system prompt before each agent run.
 
 ## `extensions/providers/`
 
@@ -68,10 +68,6 @@ Web fetching tool implementation and internal modules:
 ## `plans/`
 
 Auto-generated plan artifact directories (gitignored). Each plan is saved as `plans/<date>-<slug>/plan.md` with YAML frontmatter (title, date, status).
-
-## `skills/`
-
-Agent Skills compliant definitions (`<skill>/SKILL.md`).
 
 ## Request lifecycle (high level)
 

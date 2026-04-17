@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-const KARPATHY_ADDENDUM = `
+const CUSTOM_SYSTEM_PROMPT_ADDENDUM = `
 
 ## Operating Principles
 
@@ -30,16 +30,23 @@ Apply these default working rules unless the user explicitly asks for something 
 
 ### 5) Clarification threshold
 Ask before proceeding when missing information could cause you to make a wrong assumption. Being slightly slower is better than confidently doing the wrong thing.
+
+### 6) Final response presentation
+- When you finish a task, present the answer in clean markdown.
+- Prefer short section headings and compact bullet lists over long paragraphs.
+- Use markdown tables when summarizing files, checks, tradeoffs, or phase/status information.
+- If code or commands were verified, include a short verification/checks section.
+- End with a concise outcome summary rather than an abrupt stop.
 `;
 
-export default function karpathyGuidelines(pi: ExtensionAPI) {
+export default function customSystemPrompt(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     const current = event.systemPrompt || "";
     if (current.includes("## Operating Principles")) {
       return {};
     }
     return {
-      systemPrompt: current + KARPATHY_ADDENDUM,
+      systemPrompt: current + CUSTOM_SYSTEM_PROMPT_ADDENDUM,
     };
   });
 }

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "MIT",
-  "description": "Custom Pi package bundle with extensions, skills, and web_fetch",
+  "description": "Custom Pi package bundle with extensions and web_fetch",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -23,13 +23,10 @@
       "./extensions/core/env-loader.ts",
       "./extensions/core/custom-core-ui.ts",
       "./extensions/modes/question-first-plan-mode.ts",
-      "./extensions/policies/karpathy-guidelines.ts",
+      "./extensions/policies/custom-system-prompt.ts",
       "./extensions/providers/opencode-free-models.ts",
       "./extensions/providers/opencode-go-models.ts",
       "./tools/web-fetch/index.ts"
-    ],
-    "skills": [
-      "./skills"
     ],
     "themes": [
       "./themes"

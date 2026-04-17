@@ -12,7 +12,7 @@ const path = require('node:path');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const manifest = pkg.pi || {};
 
-for (const key of ['extensions', 'skills']) {
+for (const key of ['extensions']) {
   const entries = Array.isArray(manifest[key]) ? manifest[key] : [];
   if (entries.length === 0) {
     throw new Error(`pi.${key} must contain at least one path`);
@@ -24,9 +24,19 @@ for (const key of ['extensions', 'skills']) {
     }
   }
 }
+
+for (const key of ['skills', 'themes']) {
+  const entries = Array.isArray(manifest[key]) ? manifest[key] : [];
+  for (const entry of entries) {
+    const absolute = path.resolve(entry);
+    if (!fs.existsSync(absolute)) {
+      throw new Error(`Missing manifest path: pi.${key} -> ${entry}`);
+    }
+  }
+}
 NODE
 
-echo "[smoke] validating skill frontmatter"
+echo "[smoke] validating optional skill frontmatter"
 node <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -44,21 +54,22 @@ function findSkillFiles(dir) {
   return out;
 }
 
-const files = findSkillFiles(path.resolve('skills'));
-if (files.length === 0) throw new Error('No SKILL.md files found under skills/');
+const skillsDir = path.resolve('skills');
+if (fs.existsSync(skillsDir)) {
+  const files = findSkillFiles(skillsDir);
+  for (const file of files) {
+    const text = fs.readFileSync(file, 'utf8');
+    const frontmatter = text.match(/^---\n([\s\S]*?)\n---\n/);
+    if (!frontmatter) throw new Error(`Missing frontmatter in ${file}`);
 
-for (const file of files) {
-  const text = fs.readFileSync(file, 'utf8');
-  const frontmatter = text.match(/^---\n([\s\S]*?)\n---\n/);
-  if (!frontmatter) throw new Error(`Missing frontmatter in ${file}`);
+    const name = frontmatter[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    const description = frontmatter[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
+    const dirName = path.basename(path.dirname(file));
 
-  const name = frontmatter[1].match(/^name:\s*(.+)$/m)?.[1]?.trim();
-  const description = frontmatter[1].match(/^description:\s*(.+)$/m)?.[1]?.trim();
-  const dirName = path.basename(path.dirname(file));
-
-  if (!name) throw new Error(`Missing name in ${file}`);
-  if (!description) throw new Error(`Missing description in ${file}`);
-  if (name !== dirName) throw new Error(`Skill name (${name}) must match directory name (${dirName}) in ${file}`);
+    if (!name) throw new Error(`Missing name in ${file}`);
+    if (!description) throw new Error(`Missing description in ${file}`);
+    if (name !== dirName) throw new Error(`Skill name (${name}) must match directory name (${dirName}) in ${file}`);
+  }
 }
 NODE
 

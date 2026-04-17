@@ -31,6 +31,13 @@ const LEGACY_BANNER_SETTING_KEY = "customCoreUiBanner";
 const CHANGED_FILES_WIDGET_KEY = "custom-core-ui-changed-files";
 const MAX_RECENT_CHANGED_FILES = 6;
 
+interface RunSummary {
+  durationMs: number;
+  totalTokens: number;
+  totalCost: number;
+  modelCount: number;
+}
+
 function ansi(color: string, text: string): string {
   return `${color}${text}${ANSI_RESET}`;
 }
@@ -43,11 +50,13 @@ function styleInputBar(content: string, width: number): string {
   return `${INPUT_BG}${padded}${pad}${ANSI_RESET}`;
 }
 
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+const OSC_SEQUENCE_PATTERN = new RegExp(`${ESC}\\][^${BEL}]*${BEL}`, "g");
+const ANSI_SEQUENCE_PATTERN = new RegExp(`${ESC}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+
 function stripTerminalCodes(text: string): string {
-  return text
-    .replaceAll(CURSOR_MARKER, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "")
-    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
+  return text.replaceAll(CURSOR_MARKER, "").replace(OSC_SEQUENCE_PATTERN, "").replace(ANSI_SEQUENCE_PATTERN, "");
 }
 
 function isEditorBorderLine(line: string): boolean {
@@ -179,10 +188,56 @@ function upsertChangedFile(
   return next.slice(0, MAX_RECENT_CHANGED_FILES);
 }
 
-function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEntry[]) {
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function formatMoney(value: number): string {
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.1) return `$${value.toFixed(2)}`;
+  if (value > 0) return `$${value.toFixed(3)}`;
+  return "$0.00";
+}
+
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(value);
+}
+
+function summarizeAssistantUsage(messages: unknown): RunSummary {
+  const items = Array.isArray(messages) ? messages : [];
+  let totalTokens = 0;
+  let totalCost = 0;
+  const models = new Set<string>();
+
+  for (const item of items) {
+    const message = item as {
+      role?: string;
+      model?: string;
+      usage?: { totalTokens?: number; cost?: { total?: number } };
+    };
+    if (message.role !== "assistant") continue;
+    totalTokens += message.usage?.totalTokens || 0;
+    totalCost += message.usage?.cost?.total || 0;
+    if (message.model) models.add(message.model);
+  }
+
+  return {
+    durationMs: 0,
+    totalTokens,
+    totalCost,
+    modelCount: models.size,
+  };
+}
+
+function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEntry[], summary?: RunSummary) {
   if (!ctx.hasUI) return;
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && !summary) {
     ctx.ui.setWidget(CHANGED_FILES_WIDGET_KEY, undefined);
     return;
   }
@@ -204,6 +259,18 @@ function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEnt
           midRow = "";
           bottomRow = "";
         };
+
+        if (summary) {
+          const parts = [
+            theme.fg("accent", `Done in ${formatDuration(summary.durationMs)}`),
+            theme.fg("muted", `${entries.length} file${entries.length === 1 ? "" : "s"}`),
+          ];
+          if (summary.modelCount > 0) parts.push(theme.fg("dim", `${summary.modelCount} model${summary.modelCount === 1 ? "" : "s"}`));
+          if (summary.totalTokens > 0) parts.push(theme.fg("dim", `${formatCompactNumber(summary.totalTokens)} tokens`));
+          parts.push(theme.fg("dim", formatMoney(summary.totalCost)));
+          lines.push(truncateToWidth(parts.join(theme.fg("borderMuted", " · ")), width));
+          if (entries.length > 0) lines.push("");
+        }
 
         for (const entry of entries) {
           const added = entry.added > 0 ? theme.fg("success", `+${entry.added}`) : "";
@@ -667,6 +734,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
   let swatchTimer: ReturnType<typeof setTimeout> | null = null;
   let footerPreset: FooterPreset = readFooterPreset();
   let changedFiles: ChangedFileEntry[] = [];
+  let agentStartedAt = 0;
 
   const clearSwatchTimer = () => {
     if (swatchTimer) {
@@ -683,6 +751,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
     lastCtx = ctx;
     footerPreset = readFooterPreset();
     changedFiles = [];
+    agentStartedAt = 0;
     applySavedTheme(ctx);
     ctx.ui.setEditorComponent((tui, theme, keybindings) => new ScreenshotInputEditor(tui, theme, keybindings));
     if (readBannerEnabled()) showBanner(ctx);
@@ -690,6 +759,14 @@ export default function customCoreUi(pi: ExtensionAPI) {
     renderChangedFilesWidget(ctx, changedFiles);
     installFooter(pi, ctx, footerPreset);
     updateThemeStatus(ctx);
+  });
+
+  pi.on("agent_start", async () => {
+    changedFiles = [];
+    agentStartedAt = Date.now();
+    if (lastCtx?.hasUI) {
+      renderChangedFilesWidget(lastCtx, changedFiles);
+    }
   });
 
   pi.on("tool_result", async (event, ctx) => {
@@ -710,8 +787,23 @@ export default function customCoreUi(pi: ExtensionAPI) {
     renderChangedFilesWidget(ctx, changedFiles);
   });
 
+  pi.on("agent_end", async (event, ctx) => {
+    lastCtx = ctx;
+    if (!ctx.hasUI) return;
+
+    const usage = summarizeAssistantUsage(event.messages);
+    const summary: RunSummary = {
+      ...usage,
+      durationMs: agentStartedAt > 0 ? Date.now() - agentStartedAt : 0,
+    };
+    renderChangedFilesWidget(ctx, changedFiles, summary);
+  });
+
   pi.on("input", async () => {
     hideBanner(lastCtx);
+    if (lastCtx?.hasUI) {
+      renderChangedFilesWidget(lastCtx, []);
+    }
   });
 
   pi.registerShortcut("ctrl+x", {
