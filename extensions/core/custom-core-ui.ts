@@ -36,6 +36,7 @@ interface RunSummary {
   totalTokens: number;
   totalCost: number;
   modelCount: number;
+  changedFileCount: number;
 }
 
 function ansi(color: string, text: string): string {
@@ -208,7 +209,7 @@ function formatCompactNumber(value: number): string {
   return String(value);
 }
 
-function summarizeAssistantUsage(messages: unknown): RunSummary {
+function summarizeAssistantUsage(messages: unknown): Omit<RunSummary, "durationMs" | "changedFileCount"> {
   const items = Array.isArray(messages) ? messages : [];
   let totalTokens = 0;
   let totalCost = 0;
@@ -227,17 +228,27 @@ function summarizeAssistantUsage(messages: unknown): RunSummary {
   }
 
   return {
-    durationMs: 0,
     totalTokens,
     totalCost,
     modelCount: models.size,
   };
 }
 
-function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEntry[], summary?: RunSummary) {
+function formatRunSummary(summary: RunSummary): string {
+  const parts = [
+    `Done ${formatDuration(summary.durationMs)}`,
+    `${summary.changedFileCount} file${summary.changedFileCount === 1 ? "" : "s"}`,
+  ];
+  if (summary.modelCount > 0) parts.push(`${summary.modelCount} model${summary.modelCount === 1 ? "" : "s"}`);
+  if (summary.totalTokens > 0) parts.push(`${formatCompactNumber(summary.totalTokens)} tok`);
+  parts.push(formatMoney(summary.totalCost));
+  return parts.join(" · ");
+}
+
+function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEntry[]) {
   if (!ctx.hasUI) return;
 
-  if (entries.length === 0 && !summary) {
+  if (entries.length === 0) {
     ctx.ui.setWidget(CHANGED_FILES_WIDGET_KEY, undefined);
     return;
   }
@@ -259,18 +270,6 @@ function renderChangedFilesWidget(ctx: ExtensionContext, entries: ChangedFileEnt
           midRow = "";
           bottomRow = "";
         };
-
-        if (summary) {
-          const parts = [
-            theme.fg("accent", `Done in ${formatDuration(summary.durationMs)}`),
-            theme.fg("muted", `${entries.length} file${entries.length === 1 ? "" : "s"}`),
-          ];
-          if (summary.modelCount > 0) parts.push(theme.fg("dim", `${summary.modelCount} model${summary.modelCount === 1 ? "" : "s"}`));
-          if (summary.totalTokens > 0) parts.push(theme.fg("dim", `${formatCompactNumber(summary.totalTokens)} tokens`));
-          parts.push(theme.fg("dim", formatMoney(summary.totalCost)));
-          lines.push(truncateToWidth(parts.join(theme.fg("borderMuted", " · ")), width));
-          if (entries.length > 0) lines.push("");
-        }
 
         for (const entry of entries) {
           const added = entry.added > 0 ? theme.fg("success", `+${entry.added}`) : "";
@@ -443,6 +442,7 @@ function resolveFooterSegments(
     thinkingLevel: string | undefined;
     planActive: boolean;
     glyphs: FooterGlyphs;
+    runSummary?: RunSummary;
   },
 ): { left: FooterSegment[]; right: FooterSegment[] } {
   const modelSegment: FooterSegment = { text: `${parts.glyphs.model} ${parts.model}`, color: "accent", bold: true };
@@ -460,8 +460,12 @@ function resolveFooterSegments(
     bold: parts.thinkingLevel !== "off",
   };
 
+  const runSummarySegment: FooterSegment | null = parts.runSummary
+    ? { text: `✓ ${formatRunSummary(parts.runSummary)}`, color: "success", bold: true }
+    : null;
+
   let left: FooterSegment[];
-  let right: FooterSegment[] = [thinkingSegment];
+  let right: FooterSegment[] = runSummarySegment ? [runSummarySegment] : [thinkingSegment];
   switch (preset) {
     case "minimal":
       left = [dirSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
@@ -471,11 +475,12 @@ function resolveFooterSegments(
       break;
     case "codex":
       left = [dirSegment, gitSegment].filter((segment): segment is FooterSegment => segment !== null);
-      right = [modelSegment, contextSegment, thinkingSegment];
+      right = runSummarySegment ? [runSummarySegment] : [modelSegment, contextSegment, thinkingSegment];
       break;
     case "default":
     default:
       left = [modelSegment, gitSegment, contextSegment, dirSegment].filter((segment): segment is FooterSegment => segment !== null);
+      if (runSummarySegment) right = [runSummarySegment];
       break;
   }
 
@@ -501,7 +506,7 @@ function isPlanModeActive(ctx: ExtensionContext): boolean {
   return false;
 }
 
-function installFooter(pi: ExtensionAPI, ctx: ExtensionContext, preset: FooterPreset) {
+function installFooter(pi: ExtensionAPI, ctx: ExtensionContext, preset: FooterPreset, getRunSummary: () => RunSummary | undefined) {
   if (!ctx.hasUI) return;
 
   const glyphs = footerGlyphs();
@@ -542,6 +547,7 @@ function installFooter(pi: ExtensionAPI, ctx: ExtensionContext, preset: FooterPr
           thinkingLevel,
           planActive: isPlanModeActive(ctx),
           glyphs,
+          runSummary: getRunSummary(),
         });
 
         const left = " " + renderFooterSegments(theme, glyphs.separator, segments.left);
@@ -734,6 +740,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
   let swatchTimer: ReturnType<typeof setTimeout> | null = null;
   let footerPreset: FooterPreset = readFooterPreset();
   let changedFiles: ChangedFileEntry[] = [];
+  let lastRunSummary: RunSummary | undefined;
   let agentStartedAt = 0;
 
   const clearSwatchTimer = () => {
@@ -751,21 +758,24 @@ export default function customCoreUi(pi: ExtensionAPI) {
     lastCtx = ctx;
     footerPreset = readFooterPreset();
     changedFiles = [];
+    lastRunSummary = undefined;
     agentStartedAt = 0;
     applySavedTheme(ctx);
     ctx.ui.setEditorComponent((tui, theme, keybindings) => new ScreenshotInputEditor(tui, theme, keybindings));
     if (readBannerEnabled()) showBanner(ctx);
     else hideBanner(ctx);
     renderChangedFilesWidget(ctx, changedFiles);
-    installFooter(pi, ctx, footerPreset);
+    installFooter(pi, ctx, footerPreset, () => lastRunSummary);
     updateThemeStatus(ctx);
   });
 
   pi.on("agent_start", async () => {
     changedFiles = [];
+    lastRunSummary = undefined;
     agentStartedAt = Date.now();
     if (lastCtx?.hasUI) {
       renderChangedFilesWidget(lastCtx, changedFiles);
+      installFooter(pi, lastCtx, footerPreset, () => lastRunSummary);
     }
   });
 
@@ -792,17 +802,21 @@ export default function customCoreUi(pi: ExtensionAPI) {
     if (!ctx.hasUI) return;
 
     const usage = summarizeAssistantUsage(event.messages);
-    const summary: RunSummary = {
+    lastRunSummary = {
       ...usage,
       durationMs: agentStartedAt > 0 ? Date.now() - agentStartedAt : 0,
+      changedFileCount: changedFiles.length,
     };
-    renderChangedFilesWidget(ctx, changedFiles, summary);
+    renderChangedFilesWidget(ctx, changedFiles);
+    installFooter(pi, ctx, footerPreset, () => lastRunSummary);
   });
 
   pi.on("input", async () => {
     hideBanner(lastCtx);
+    lastRunSummary = undefined;
     if (lastCtx?.hasUI) {
       renderChangedFilesWidget(lastCtx, []);
+      installFooter(pi, lastCtx, footerPreset, () => lastRunSummary);
     }
   });
 
@@ -841,7 +855,7 @@ export default function customCoreUi(pi: ExtensionAPI) {
       }
 
       persistFooterPreset(footerPreset);
-      installFooter(pi, ctx, footerPreset);
+      installFooter(pi, ctx, footerPreset, () => lastRunSummary);
       ctx.ui.notify(`Status bar preset: ${footerPreset}`, "info");
     },
   });
