@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["extensions/**/*.ts", "tools/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "extensions/**/*.ts", "tools/**/*.ts", "tests/**/*.ts"]
 }

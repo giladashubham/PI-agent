@@ -1,44 +1,20 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Cost, DynamicProviderModel } from "./shared/provider-types.js";
+import { patchModelRegistryForProvider } from "./shared/registry-patch.js";
+import { isApiKeyConfigured, stripProviderModelsFromRegistry, isFreeCost, getProviderModels } from "./shared/provider-utils.js";
 
 const OPENCODE_PROVIDER = "opencode";
 const STATUS_KEY = "opencode-free-models";
-
-type Cost = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-};
-
-type DynamicProviderModel = {
-  id: string;
-  name: string;
-  api?: string;
-  baseUrl?: string;
-  reasoning: boolean;
-  input: ("text" | "image")[];
-  cost: Cost;
-  contextWindow: number;
-  maxTokens: number;
-  headers?: Record<string, string>;
-  compat?: unknown;
-};
+const API_KEY_NAMES = ["OPENCODE_API_KEY", "opencode_API_KEY"] as const;
 
 let allowedFreeModelIds = new Set<string>();
 
 export function isOpencodeApiKeyConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  const key = env.OPENCODE_API_KEY ?? env.opencode_API_KEY;
-  return typeof key === "string" && key.trim().length > 0;
+  return isApiKeyConfigured(API_KEY_NAMES, env);
 }
 
 export function stripOpencodeModelsFromRegistry(registry: { models?: Array<{ provider?: string }> }): void {
-  if (!Array.isArray(registry.models)) return;
-  registry.models = registry.models.filter((model) => model.provider !== OPENCODE_PROVIDER);
-}
-
-function isFreeCost(cost: Cost | undefined): boolean {
-  if (!cost) return false;
-  return cost.input === 0 && cost.output === 0 && cost.cacheRead === 0 && cost.cacheWrite === 0;
+  stripProviderModelsFromRegistry(registry, OPENCODE_PROVIDER);
 }
 
 function getPreferredFallbackId(ids: string[]): string | undefined {
@@ -56,76 +32,14 @@ function getPreferredFallbackId(ids: string[]): string | undefined {
   return ids[0];
 }
 
-function patchModelRegistryForModelBaseUrls(ctx: ExtensionContext) {
-  const registry = ctx.modelRegistry as any;
-  if (registry.__opencodeFreeModelsPatched) return;
-
-  const originalApplyProviderConfig = registry.applyProviderConfig?.bind(registry);
-  if (typeof originalApplyProviderConfig !== "function") return;
-
-  registry.applyProviderConfig = function applyProviderConfigPatched(providerName: string, config: any) {
-    if (providerName !== OPENCODE_PROVIDER) {
-      return originalApplyProviderConfig(providerName, config);
-    }
-
-    if (!isOpencodeApiKeyConfigured()) {
-      registry.models = registry.models.filter((model: any) => model.provider !== providerName);
-      return;
-    }
-
-    if (!config?.models?.length || config.oauth || config.streamSimple) {
-      return originalApplyProviderConfig(providerName, config);
-    }
-
-    registry.storeProviderRequestConfig(providerName, config);
-    registry.models = registry.models.filter((model: any) => model.provider !== providerName);
-
-    for (const modelDef of config.models) {
-      const api = modelDef.api || config.api;
-      registry.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
-      registry.models.push({
-        id: modelDef.id,
-        name: modelDef.name,
-        api,
-        provider: providerName,
-        baseUrl: modelDef.baseUrl ?? config.baseUrl,
-        reasoning: modelDef.reasoning,
-        input: modelDef.input,
-        cost: modelDef.cost,
-        contextWindow: modelDef.contextWindow,
-        maxTokens: modelDef.maxTokens,
-        headers: undefined,
-        compat: modelDef.compat,
-      });
-    }
-  };
-
-  registry.__opencodeFreeModelsPatched = true;
-}
-
 function getFreeOpencodeModels(ctx: ExtensionContext): DynamicProviderModel[] {
-  return ctx.modelRegistry
-    .getAll()
-    .filter((model) => model.provider === OPENCODE_PROVIDER)
-    .filter((model) => isFreeCost(model.cost))
-    .map((model) => ({
-      id: model.id,
-      name: model.name,
-      api: model.api,
-      baseUrl: model.baseUrl,
-      reasoning: model.reasoning,
-      input: model.input,
-      cost: model.cost,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      compat: model.compat,
-    }));
+  return getProviderModels(ctx, OPENCODE_PROVIDER).filter((model) => isFreeCost(model.cost));
 }
 
 async function enforceFreeOpencodeOnly(pi: ExtensionAPI, ctx: ExtensionContext) {
   allowedFreeModelIds = new Set<string>();
 
-  patchModelRegistryForModelBaseUrls(ctx);
+  patchModelRegistryForProvider(ctx, OPENCODE_PROVIDER, "__opencodeFreeModelsPatched", () => isOpencodeApiKeyConfigured());
 
   if (!isOpencodeApiKeyConfigured()) {
     stripOpencodeModelsFromRegistry(ctx.modelRegistry as any);
@@ -147,7 +61,7 @@ async function enforceFreeOpencodeOnly(pi: ExtensionAPI, ctx: ExtensionContext) 
     models: freeModels as any,
   });
 
-  ctx.ui.setStatus(STATUS_KEY, `opencode: ${freeModels.length} free models`);
+  ctx.ui.setStatus(STATUS_KEY, "opencode: " + freeModels.length + " free models");
 
   const currentModel = ctx.model;
   if (currentModel?.provider !== OPENCODE_PROVIDER || allowedFreeModelIds.has(currentModel.id)) {
@@ -163,7 +77,7 @@ async function enforceFreeOpencodeOnly(pi: ExtensionAPI, ctx: ExtensionContext) 
   const changed = await pi.setModel(fallbackModel);
   if (changed) {
     ctx.ui.notify(
-      `Switched to ${OPENCODE_PROVIDER}/${fallbackModel.id} because paid opencode models are hidden.`,
+      "Switched to " + OPENCODE_PROVIDER + "/" + fallbackModel.id + " because paid opencode models are hidden.",
       "info",
     );
   }
@@ -188,7 +102,7 @@ export default function opencodeFreeModels(pi: ExtensionAPI) {
     const changed = await pi.setModel(fallbackModel);
     if (changed) {
       ctx.ui.notify(
-        `${OPENCODE_PROVIDER}/${event.model.id} is hidden. Using ${OPENCODE_PROVIDER}/${fallbackModel.id} instead.`,
+        OPENCODE_PROVIDER + "/" + event.model.id + " is hidden. Using " + OPENCODE_PROVIDER + "/" + fallbackModel.id + " instead.",
         "warning",
       );
     }

@@ -1,12 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { DEFAULT_ENV_PATHS } from "../../src/shared/paths.js";
 
 const STATUS_KEY = "env-loader";
-const DEFAULT_ENV_PATHS = [join(homedir(), ".pi", "agent", ".env")];
 const GLOBAL_STATE_KEY = "__PI_AGENT_ENV_LOADER_STATE__";
-
 type EnvLoaderGlobalState = {
   shellEnvKeys: Set<string>;
 };

@@ -1,6 +1,10 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { readJsonObject, readConfigSection } from "../../src/shared/config.js";
+import {
+  CUSTOM_CONFIG_PATH,
+  SETTINGS_PATH,
+  LEGACY_WEB_FETCH_CONFIG_PATH,
+  DEFAULT_WEB_FETCH_EXTENSIONS_DIR,
+} from "../../src/shared/paths.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { BrowserPool } from "./browser-pool.js";
@@ -12,7 +16,6 @@ import { detectPythonRunner } from "./runtime.js";
 import { createWebFetchPipeline } from "./pipeline.js";
 import { resolveSubAgentModel, type SubAgentModelConfig } from "./model-selection.js";
 import { renderWebFetchCall, renderWebFetchResult } from "./render.js";
-
 export type {
   WebFetchExtension,
   HookContext,
@@ -31,20 +34,7 @@ interface WebFetchConfig extends SubAgentModelConfig {
   subagentTimeoutMs?: number;
 }
 
-const CUSTOM_CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-agent-custom.json");
-const SETTINGS_PATH = join(homedir(), ".pi", "agent", "settings.json");
-const LEGACY_CONFIG_PATH = join(homedir(), ".pi", "agent", "web-fetch.json");
 const VALID_THINKING_LEVELS = new Set(["off", "low", "medium", "high", "xhigh"]);
-
-function readJsonObject(path: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function loadConfig(): WebFetchConfig {
   const custom = readJsonObject(CUSTOM_CONFIG_PATH);
   const customConfig = custom?.webFetch;
@@ -58,10 +48,9 @@ function loadConfig(): WebFetchConfig {
     return settingsConfig as WebFetchConfig;
   }
 
-  const legacy = readJsonObject(LEGACY_CONFIG_PATH);
+  const legacy = readJsonObject(LEGACY_WEB_FETCH_CONFIG_PATH);
   return (legacy as WebFetchConfig | undefined) ?? {};
 }
-
 function resolveThinkingLevel(value: string | undefined): string {
   if (!value) return "low";
   const normalized = value.trim().toLowerCase();
@@ -135,7 +124,7 @@ export default function webFetchExtension(pi: ExtensionAPI) {
 
     const localDir = config.extensionsDir
       ? expandHomePath(config.extensionsDir)
-      : join(homedir(), ".pi", "extensions", "web-fetch");
+      : DEFAULT_WEB_FETCH_EXTENSIONS_DIR;
     await loadLocalExtensions(registry, localDir, ctx.ui.notify.bind(ctx.ui));
 
     pi.events.emit("web-fetch:ready", undefined);
