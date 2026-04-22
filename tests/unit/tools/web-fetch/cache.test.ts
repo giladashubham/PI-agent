@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createWebFetchCache } from "../../tools/web-fetch/cache.js";
+import { createWebFetchCache } from "../../../../tools/web-fetch/core/cache.js";
 
 describe("createWebFetchCache", () => {
   it("stores and retrieves content before TTL", () => {

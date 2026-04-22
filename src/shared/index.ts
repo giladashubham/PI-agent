@@ -9,7 +9,7 @@ export {
   BANNER_PATHS,
   DEFAULT_WEB_FETCH_EXTENSIONS_DIR,
 } from "./paths.js";
-export type { Cost, DynamicProviderModel, ModeProfileConfig, PlanModeConfig } from "./types.js";
+export type { ModeProfileConfig, PlanModeConfig } from "./types.js";
 export { VALID_THINKING_LEVELS, normalizeThinkingLevel } from "./types.js";
 export { INPUT_BG, INPUT_FG, INPUT_DIM, INPUT_ACCENT, ANSI_RESET, ansi } from "./ansi.js";
 export { formatDuration, formatMoney, formatCompactNumber, formatTokens } from "./formatting.js";

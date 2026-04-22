@@ -1,42 +1,37 @@
-# Plan Mode (Plan-lite)
+# Plan Mode (plan-lite)
 
-This directory contains the lightweight plan-mode building blocks used by `question-first-plan-mode.ts`.
+This directory contains the lightweight plan-mode modules used by `extensions/modes/plan/index.ts`.
 
 ## Goals
 
-- Keep `/plan on|off` behavior simple and predictable.
-- Keep `ask_questions` always available (normal mode and plan mode).
-- Use prompt behavior for planning output (markdown in assistant response).
-- Keep optional safety and profile features modular.
+- Keep `/plan on|off` behavior simple and predictable
+- Keep `ask_questions` always available (normal + plan mode)
+- Use prompt behavior for planning output (inline markdown)
+- Keep safety/profile features modular
 
 ## Modules
 
+- `index.ts`
+  - Orchestrator for `/plan`, `/plan on`, `/plan off`, `/plan <task>`
+  - Restores persisted mode state and active tools
+  - Injects plan-mode prompt and bash safety gate
+
 - `ask-questions-tool.ts`
-  - Registers `ask_questions` once.
-  - Interactive multi-question UI with optional review/edit before submit.
+  - Registers `ask_questions` once
+  - Interactive multi-question flow with optional review/edit
 
 - `tool-sets.ts`
-  - Computes normal-mode vs plan-mode active tools.
-  - Ensures `ask_questions` is always present when available.
+  - Computes normal-mode vs plan-mode active tools
+  - Ensures `ask_questions` stays available when present
 
 - `plan-prompts.ts`
-  - Plan-mode system prompt snippet.
-  - Plan-mode whitelist for `setActiveTools`.
+  - Plan-mode system prompt snippet
+  - Plan-mode tool whitelist
 
 - `bash-safety.ts`
-  - Read-only bash safety policy used in `tool_call` while `/plan` is enabled.
+  - Read-only bash policy used while `/plan` is active
 
 - `plan-config.ts`
-  - Optional model/thinking profile apply/restore helpers for `/plan on|off`.
+  - Optional model/thinking profile apply/restore helpers
 
-## Integration
-
-`extensions/modes/question-first-plan-mode.ts` is the orchestrator:
-
-1. toggles mode (`/plan on|off`)
-2. applies tool sets
-3. appends plan prompt when enabled
-4. enforces bash safety
-5. restores previous profile on mode off
-
-This split keeps behavior explicit and makes the extension easier to evolve as open-source code.
+This split keeps behavior explicit and easy to maintain.

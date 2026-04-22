@@ -1,31 +1,4 @@
 /**
- * Model cost information (used by provider extensions).
- */
-export interface Cost {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}
-
-/**
- * Dynamic provider model definition (used by provider extensions).
- */
-export interface DynamicProviderModel {
-  id: string;
-  name: string;
-  api?: string;
-  baseUrl?: string;
-  reasoning: boolean;
-  input: ("text" | "image")[];
-  cost: Cost;
-  contextWindow: number;
-  maxTokens: number;
-  headers?: Record<string, string>;
-  compat?: unknown;
-}
-
-/**
  * Mode profile configuration (used by plan mode).
  */
 export interface ModeProfileConfig {

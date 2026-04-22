@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { isSafePlanCommand } from "./plan/bash-safety.js";
-import { registerAskQuestionsTool } from "./plan/ask-questions-tool.js";
-import { PLAN_MODE_PROMPT } from "./plan/plan-prompts.js";
-import { getNormalModeToolNames, getPlanModeToolNames } from "./plan/tool-sets.js";
-import { currentModelRef, applyModeProfile, restorePrePlanProfile } from "./plan/plan-config.js";
+import { isSafePlanCommand } from "./bash-safety.js";
+import { registerAskQuestionsTool } from "./ask-questions-tool.js";
+import { PLAN_MODE_PROMPT } from "./plan-prompts.js";
+import { getNormalModeToolNames, getPlanModeToolNames } from "./tool-sets.js";
+import { currentModelRef, applyModeProfile, restorePrePlanProfile } from "./plan-config.js";
 
 interface PlanModeState {
   enabled: boolean;

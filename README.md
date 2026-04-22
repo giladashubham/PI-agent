@@ -1,13 +1,18 @@
 # Pi Agent Custom Bundle
 
-A custom Pi package repository with curated extensions and a web-fetch tool.
+A custom Pi package repository with curated extensions, themes, and a web-fetch tool.
 
-This repo is organized for maintainability (similar high-level style to larger Pi package repos), while preserving current behavior.
+This repository is organized for production maintenance and open-source collaboration.
 
 ## What this repo contains
 
-- **Extensions** for env loading, UI, planning workflow, and prompt behavior
-- **Web fetch tool** implemented under `tools/web-fetch`
+- Runtime extensions (`extensions/**`)
+  - core UI + env loader
+  - lightweight `/plan` mode
+  - custom system prompt policy
+- Web fetch tool (`tools/web-fetch/**`)
+- Shared utilities (`src/shared/**`)
+- Bundled themes (`themes/**`)
 
 ## Repository layout
 
@@ -15,30 +20,48 @@ This repo is organized for maintainability (similar high-level style to larger P
 .
 ├── extensions/
 │   ├── core/
+│   │   ├── env-loader.ts
+│   │   └── ui/
+│   │       ├── index.ts
+│   │       ├── banner.ts
+│   │       ├── changed-files.ts
+│   │       ├── footer.ts
+│   │       ├── input-editor.ts
+│   │       └── nerd-fonts.ts
 │   ├── modes/
-│   ├── policies/
-│   └── providers/
+│   │   └── plan/
+│   │       ├── index.ts
+│   │       ├── ask-questions-tool.ts
+│   │       ├── bash-safety.ts
+│   │       ├── plan-config.ts
+│   │       ├── plan-prompts.ts
+│   │       └── tool-sets.ts
+│   └── policies/
+│       └── custom-system-prompt.ts
 ├── tools/
 │   └── web-fetch/
-├── plans/
+│       ├── index.ts
+│       ├── core/
+│       ├── config/
+│       ├── ui/
+│       ├── util/
+│       └── extensions/
+├── src/shared/
 ├── tests/
+│   ├── unit/
+│   │   ├── extensions/
+│   │   ├── tools/
+│   │   └── shared/
+│   └── smoke.sh
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── CONVENTIONS.md
-│   └── RELEASE.md
-├── CONTRIBUTING.md
-├── SECURITY.md
-├── install.sh
-├── uninstall.sh
+│   ├── EXTENDING.md
+│   ├── RELEASE.md
+│   └── reference/
+│       └── config.md
 └── package.json
 ```
-
-See:
-
-- `docs/ARCHITECTURE.md` for runtime architecture and flow
-- `docs/CONVENTIONS.md` for placement/naming/testing standards
-- `CONTRIBUTING.md` for local development workflow
-- `docs/RELEASE.md` for versioning and release checklist
 
 ## Install
 
@@ -85,75 +108,33 @@ Override with:
 PI_AGENT_DIR=/path/to/.pi/agent ./install.sh
 ```
 
-## Global .env loading
-
-This bundle includes an env-loader extension that reads, on startup:
-
-- `~/.pi/agent/.env`
-
-Loaded variables are injected into `process.env` (existing shell env vars are not overwritten).
-
-## Custom bundle config file
+## Configuration
 
 Bundle-specific settings live in:
 
 - `~/.pi/agent/pi-agent-custom.json`
 
-Current keys used by this bundle:
+Supported keys used by this bundle:
 
 - `planMode` — plan mode model/thinking profiles
 - `webFetch` — web-fetch model/timeouts/extensions settings
 - `ui.banner` — custom core UI preference
 
-Theme selection uses Pi's native theme support via `/settings` or `settings.json.theme`. Bundled themes from this package remain available through `package.json#pi.themes`.
+See full reference:
 
-## Plan mode model/thinking config
+- `docs/reference/config.md`
 
-Plan mode supports per-phase model + thinking configuration via:
-
-- `~/.pi/agent/pi-agent-custom.json` under `planMode`
-
-Example:
-
-```json
-{
-  "planMode": {
-    "defaults": {
-      "thinkingLevel": "high"
-    },
-    "plan": {
-      "model": "openai-codex/gpt-5.4"
-    }
-  }
-}
-```
-
-Resolution order for the plan phase:
-
-1. `plan.*`
-2. `defaults.*`
-3. keep current session value
-
-Allowed `thinkingLevel` values:
-
-- `off`, `low`, `medium`, `high`, `xhigh`
-
-Notes:
-
-- Use `provider/model-id` for model names when possible.
-- On manual `/plan off`, previous model/thinking (before plan mode) is restored.
-- Legacy `~/.pi/agent/plan-mode.json` is still read as a fallback when `pi-agent-custom.json.planMode` is absent.
-- `settings.json.planMode` is also accepted as a compatibility fallback.
+Theme selection uses Pi native theme support via `/settings` or `settings.json.theme`.
+Bundled themes from this package remain available through `package.json#pi.themes`.
 
 ## Plan mode
 
 Plan mode is question-first and markdown-first:
 
-- `ask_questions` is always available (normal mode and plan mode)
+- `ask_questions` is always available (normal mode + plan mode)
 - `/plan on` switches to read-only planning tools and plan-focused prompting
 - `/plan off` restores normal tool access and model profile
-- plans are rendered directly in the assistant response as markdown
-- if the user wants the plan written to disk, the agent can use normal file tools and a user-specified path
+- plans are rendered inline as markdown (no automatic plan artifact file)
 
 Commands:
 
@@ -173,11 +154,15 @@ npm run test:smoke
 npm run test:ci
 ```
 
-## Notes
+## Documentation index
 
-- Pi extension entrypoints are declared in root `package.json` under `pi.extensions`.
-- `tools/web-fetch/index.ts` is the active web-fetch entrypoint.
-- Legacy pre-reorg paths were removed; use structured folders as the source of truth.
+- `docs/ARCHITECTURE.md` — runtime architecture and ownership
+- `docs/CONVENTIONS.md` — placement/naming/testing standards
+- `docs/EXTENDING.md` — extension and tool authoring guide
+- `docs/reference/config.md` — config keys, defaults, and precedence
+- `docs/ROADMAP.md` — structure and production-readiness roadmap status
+- `CONTRIBUTING.md` — local dev + PR expectations
+- `SECURITY.md` — security policy
 
 ## License
 

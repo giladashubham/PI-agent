@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveSubAgentModel } from "../../tools/web-fetch/model-selection.js";
+import { resolveSubAgentModel } from "../../../../tools/web-fetch/config/model-selection.js";
 
 describe("resolveSubAgentModel", () => {
   it("defaults to openai-codex/gpt-5.4-mini", () => {

@@ -1,4 +1,4 @@
-import { readJsonObject, readConfigSection } from "../../src/shared/config.js";
+import { readJsonObject } from "../../src/shared/config.js";
 import {
   CUSTOM_CONFIG_PATH,
   SETTINGS_PATH,
@@ -7,15 +7,15 @@ import {
 } from "../../src/shared/paths.js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { BrowserPool } from "./browser-pool.js";
-import { expandHomePath } from "./path-utils.js";
-import { ExtensionRegistry } from "./registry.js";
+import { BrowserPool } from "./core/browser-pool.js";
+import { expandHomePath } from "./util/path-utils.js";
+import { ExtensionRegistry } from "./core/registry.js";
 import { loadBuiltInExtensions, loadLocalExtensions, setupEventBusRegistration } from "./extension-loader.js";
-import { createWebFetchCache } from "./cache.js";
-import { detectPythonRunner } from "./runtime.js";
-import { createWebFetchPipeline } from "./pipeline.js";
-import { resolveSubAgentModel, type SubAgentModelConfig } from "./model-selection.js";
-import { renderWebFetchCall, renderWebFetchResult } from "./render.js";
+import { createWebFetchCache } from "./core/cache.js";
+import { detectPythonRunner } from "./core/runtime.js";
+import { createWebFetchPipeline } from "./core/pipeline.js";
+import { resolveSubAgentModel, type SubAgentModelConfig } from "./config/model-selection.js";
+import { renderWebFetchCall, renderWebFetchResult } from "./ui/render.js";
 export type {
   WebFetchExtension,
   HookContext,

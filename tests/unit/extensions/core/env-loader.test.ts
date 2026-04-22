@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEnvVars, parseDotEnv } from "../../extensions/core/env-loader.js";
+import { applyEnvVars, parseDotEnv } from "../../../../extensions/core/env-loader.js";
 
 describe("parseDotEnv", () => {
   it("parses basic key/value pairs", () => {

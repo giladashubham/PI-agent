@@ -3,7 +3,7 @@
  * Extracted for testability — used by index.ts at runtime.
  */
 import picomatch from "picomatch";
-import type { WebFetchExtension } from "./types.js";
+import type { WebFetchExtension } from "../types.js";
 
 /**
  * Match a URL against a list of extensions, returning the first match.

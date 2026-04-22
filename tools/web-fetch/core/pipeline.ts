@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "@mariozechner/pi-coding-agent";
-import { formatBatchResults } from "./batch-format.js";
+import { formatBatchResults } from "../ui/batch-format.js";
 import type { WebFetchCache } from "./cache.js";
 import type { ExtensionRegistry } from "./registry.js";
 import type { BrowserPool } from "./browser-pool.js";
@@ -10,9 +10,9 @@ import type {
   HookResult,
   SummarizeHookContext,
   WebFetchExtension,
-} from "./types.js";
-import { createHookContext } from "./types.js";
-import { validateAndNormalizeUrl } from "./url-utils.js";
+} from "../types.js";
+import { createHookContext } from "../types.js";
+import { validateAndNormalizeUrl } from "../util/url-utils.js";
 import {
   extractContent,
   fetchPage,
@@ -21,7 +21,7 @@ import {
   type RedirectResult,
   type SubAgentError,
 } from "./runtime.js";
-import type { BatchDetails, BatchPageState, BatchPageStatus } from "./batch-status.js";
+import type { BatchDetails, BatchPageState, BatchPageStatus } from "../ui/batch-status.js";
 
 const CONTENT_SIZE_THRESHOLD = 50_000;
 const CONTENT_GUARDRAILS = `Respond concisely using only the page content above.

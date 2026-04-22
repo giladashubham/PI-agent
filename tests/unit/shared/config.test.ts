@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readJsonObject, readConfigSection, resolveConfig } from "../../src/shared/config.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readJsonObject, readConfigSection, resolveConfig } from "../../../src/shared/config.js";
 import { existsSync, readFileSync } from "node:fs";
 
 vi.mock("node:fs", () => ({

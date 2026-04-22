@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateAndNormalizeUrl } from "../../tools/web-fetch/url-utils.js";
+import { validateAndNormalizeUrl } from "../../../../tools/web-fetch/util/url-utils.js";
 
 describe("validateAndNormalizeUrl", () => {
   it("normalizes http to https", () => {

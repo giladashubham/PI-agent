@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBatchResults } from "../../tools/web-fetch/batch-format.js";
+import { formatBatchResults } from "../../../../tools/web-fetch/ui/batch-format.js";
 
 describe("formatBatchResults", () => {
   it("returns single-page result directly", () => {

@@ -6,7 +6,6 @@
    - extensions/core/     — session UX (UI, env, status)
    - extensions/modes/    — conversation flow control
    - extensions/policies/ — system prompt behavior
-   - extensions/providers/ — model/provider configuration
 
 2. Rename the file and update the export function name
 

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { WebFetchExtension } from "./types.js";
-import type { ExtensionRegistry } from "./registry.js";
+import type { ExtensionRegistry } from "./core/registry.js";
 
 export type NotifyFn = (message: string, level: "info" | "warning" | "error") => void;
 

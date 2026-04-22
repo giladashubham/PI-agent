@@ -22,22 +22,25 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Refactored `tools/web-fetch` internals into explicit modules:
-  - `pipeline.ts`
-  - `render.ts`
-  - `model-selection.ts`
-  - `runtime.ts`
-  - `cache.ts`
-  - `extension-loader.ts`
-  - `url-utils.ts`
-  - `batch-format.ts`
-  - `batch-status.ts`
-  - `path-utils.ts`
-- Plan mode persisted state now includes model/thinking pre-plan snapshot.
+- Reorganized extension entrypoints:
+  - `extensions/core/ui/index.ts` replaces `extensions/core/custom-core-ui.ts`
+  - `extensions/modes/plan/index.ts` replaces `extensions/modes/question-first-plan-mode.ts`
+- Reorganized `tools/web-fetch` internals by responsibility:
+  - `core/` (`pipeline`, `runtime`, `browser-pool`, `cache`, `registry`)
+  - `config/` (`model-selection`)
+  - `ui/` (`render`, `batch-format`, `batch-status`)
+  - `util/` (`path-utils`, `url-utils`)
+- Reorganized unit tests by domain:
+  - `tests/unit/extensions/**`
+  - `tests/unit/tools/**`
+  - `tests/unit/shared/**`
+- Updated docs to reflect current architecture and removed stale provider-extension references.
+- Plan mode persisted state continues to include model/thinking pre-plan snapshot.
 - Install/uninstall scripts fail fast on malformed settings JSON.
 
 ### Fixed
 
-- Local web-fetch extension path now supports `~` expansion.
-- Browser pool wait queue now removes abort listeners on resolve/reject.
-- Web-fetch timeout documentation now matches runtime defaults.
+- Local web-fetch extension path supports `~` expansion.
+- Browser pool wait queue removes abort listeners on resolve/reject.
+- Web-fetch timeout documentation matches runtime defaults.
+- Lint baseline is green (`npm run lint`) after removing stale/unused imports.

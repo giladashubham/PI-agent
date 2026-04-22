@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ExtensionRegistry, matchExtension } from "../../tools/web-fetch/registry.js";
-import type { WebFetchExtension } from "../../tools/web-fetch/types.js";
+import { ExtensionRegistry, matchExtension } from "../../../../tools/web-fetch/core/registry.js";
+import type { WebFetchExtension } from "../../../../tools/web-fetch/types.js";
 
 describe("matchExtension", () => {
   it("returns null for invalid URLs", () => {

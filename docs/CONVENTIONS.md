@@ -2,11 +2,14 @@
 
 ## File placement
 
-- `extensions/<domain>/*.ts` for extension entrypoints
+- `extensions/<domain>/...` for runtime extension modules
+- `extensions/**/index.ts` for extension entrypoints
 - `tools/<tool-name>/index.ts` for tool entrypoint extensions
-- `tools/<tool-name>/*.ts` for internal modules (pure helpers preferred)
-- `skills/<skill-name>/SKILL.md` for optional Agent Skills
-- `docs/*.md` for architecture and operational documentation
+- `tools/<tool-name>/{core,config,ui,util}/` for internal modules by responsibility
+- `tools/<tool-name>/extensions/*.ts` for tool-specific extension handlers
+- `src/shared/*.ts` for shared cross-domain utilities
+- `tests/unit/{extensions,tools,shared}/**/*.test.ts` for unit tests
+- `docs/**/*.md` for architecture and operational docs
 
 ## Entry points
 
@@ -15,8 +18,8 @@
 
 ## Naming
 
-- Files: kebab-case (`question-first-plan-mode.ts`)
-- Skills (when present): directory name must match `frontmatter.name`
+- Files: kebab-case (`plan-config.ts`, `batch-status.ts`)
+- Entry modules: `index.ts`
 - Constants: UPPER_SNAKE_CASE
 - Internal pure helpers: verb-first where possible (`formatBatchResults`, `expandHomePath`)
 
@@ -31,12 +34,12 @@
 
 - Unit tests in `tests/unit/**/*.test.ts`
 - Shell smoke tests in `tests/smoke.sh`
-- New bug fixes require a regression test whenever feasible
+- New bug fixes should include regression tests when feasible
 
 ## Documentation
 
 When changing behavior, update docs in the same PR:
 
-- user-facing behavior -> `README.md` or tool README
-- architecture/ownership -> `docs/ARCHITECTURE.md`
-- team standards -> `docs/CONVENTIONS.md`
+- user-facing behavior → `README.md` or tool README
+- architecture/ownership → `docs/ARCHITECTURE.md`
+- team standards → `docs/CONVENTIONS.md`

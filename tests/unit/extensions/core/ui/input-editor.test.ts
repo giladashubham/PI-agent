@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isEditorBorderLine, stripTerminalCodes } from "../../extensions/core/ui/input-editor.js";
+import { isEditorBorderLine, stripTerminalCodes } from "../../../../../extensions/core/ui/input-editor.js";
 
 describe("stripTerminalCodes", () => {
   it("removes ANSI color sequences", () => {

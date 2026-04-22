@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSafePlanCommand } from "../../extensions/modes/plan/bash-safety.js";
+import { isSafePlanCommand } from "../../../../../extensions/modes/plan/bash-safety.js";
 
 describe("isSafePlanCommand", () => {
   describe("allows safe read-only commands", () => {

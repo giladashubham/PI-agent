@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getNormalModeToolNames, getPlanModeToolNames, isPlanOnlyTool } from "../../extensions/modes/plan/tool-sets.js";
+import { getNormalModeToolNames, getPlanModeToolNames, isPlanOnlyTool } from "../../../../../extensions/modes/plan/tool-sets.js";
 
 describe("isPlanOnlyTool", () => {
   it("returns false for all tools in plan-lite mode", () => {

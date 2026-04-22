@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { installInputEditor } from "./ui/input-editor.js";
-import { showBanner, hideBanner, readBannerEnabled } from "./ui/banner.js";
+import { installInputEditor } from "./input-editor.js";
+import { showBanner, hideBanner, readBannerEnabled } from "./banner.js";
 import {
   type ChangedFileEntry,
   formatChangedFilePath,
@@ -8,8 +8,8 @@ import {
   parseDiffStats,
   upsertChangedFile,
   renderChangedFilesWidget,
-} from "./ui/changed-files.js";
-import { installFooter } from "./ui/footer.js";
+} from "./changed-files.js";
+import { installFooter } from "./footer.js";
 
 export default function customCoreUi(pi: ExtensionAPI) {
   let lastCtx: ExtensionContext | undefined;

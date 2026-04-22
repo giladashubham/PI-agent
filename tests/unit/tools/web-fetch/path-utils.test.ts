@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { expandHomePath } from "../../tools/web-fetch/path-utils.js";
+import { expandHomePath } from "../../../../tools/web-fetch/util/path-utils.js";
 
 describe("expandHomePath", () => {
   it("expands ~ to home directory", () => {
