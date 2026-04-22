@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
-import { BANNER_PATHS } from "../../../src/shared/paths.js";
+import { readJsonObject, readConfigSection } from "../../../src/shared/config.js";
+import { BANNER_PATHS, CUSTOM_CONFIG_PATH, SETTINGS_PATH } from "../../../src/shared/paths.js";
 
 const DEFAULT_BANNER = `                             ▄▄   
 █████▄ ▄████▄ ▄████▄ █████▄ ▄██▄▄▄
@@ -8,6 +9,20 @@ const DEFAULT_BANNER = `                             ▄▄
 ██▄▄██ ██▄▄██ ██▄▄▄▄ ██  ██  ██▄▄▄
  ▀▀▀▀▀  ▀▀▀██  ▀▀▀▀▀ ▀▀  ▀▀   ▀▀▀▀
         ████▀                     `;
+const LEGACY_BANNER_SETTING_KEY = "customCoreUiBanner";
+
+export function readBannerEnabled(): boolean {
+  const custom = readJsonObject(CUSTOM_CONFIG_PATH);
+  const ui = readConfigSection(custom, "ui");
+  if (typeof ui?.banner === "boolean") {
+    return ui.banner as boolean;
+  }
+
+  const settings = readJsonObject(SETTINGS_PATH);
+  return typeof settings?.[LEGACY_BANNER_SETTING_KEY] === "boolean"
+    ? Boolean(settings[LEGACY_BANNER_SETTING_KEY])
+    : false;
+}
 
 function loadBannerArt(): string {
   for (const path of BANNER_PATHS) {

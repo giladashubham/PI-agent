@@ -7,7 +7,7 @@ const INPUT_PLACEHOLDER = "Type @ to mention files, / for commands";
 const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(0x07);
 const OSC_SEQUENCE_PATTERN = new RegExp(`${ESC}\\][^${BEL}]*${BEL}`, "g");
-const ANSI_SEQUENCE_PATTERN = new RegExp(`${ESC}\\[[0-9;?]* [-/]*[@-~]`, "g");
+const ANSI_SEQUENCE_PATTERN = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
 
 function styleInputBar(content: string, width: number): string {
   const safeWidth = Math.max(1, width);
@@ -17,11 +17,11 @@ function styleInputBar(content: string, width: number): string {
   return `${INPUT_BG}${padded}${pad}${ANSI_RESET}`;
 }
 
-function stripTerminalCodes(text: string): string {
+export function stripTerminalCodes(text: string): string {
   return text.replaceAll(CURSOR_MARKER, "").replace(OSC_SEQUENCE_PATTERN, "").replace(ANSI_SEQUENCE_PATTERN, "");
 }
 
-function isEditorBorderLine(line: string): boolean {
+export function isEditorBorderLine(line: string): boolean {
   const plain = stripTerminalCodes(line).trim();
   return /^─+$/.test(plain) || /^─── [↑↓] \d+ more ─*$/.test(plain);
 }

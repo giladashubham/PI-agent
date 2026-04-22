@@ -24,7 +24,7 @@ Apply these default working rules unless the user explicitly asks for something 
 - Clean up only issues introduced by your own change.
 
 ### 4) Goal-driven execution
-- For non-trivial tasks, state a short plan and clear success criteria.
+- For non-trivial tasks, state a short approach and clear success criteria.
 - Prefer verification loops such as reproduce -> change -> verify.
 - When implementing, explain how success will be checked.
 

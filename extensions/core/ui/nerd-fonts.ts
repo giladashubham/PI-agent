@@ -29,7 +29,7 @@ export function footerGlyphs(): FooterGlyphs {
     return {
       separator: "\uE0B1",
       model: "\uEC19",
-      context: "\uE70F",
+      context: "󰆼",
       dir: "\uF115",
       git: "\uF126",
       thinking: "\uF085",

@@ -24,8 +24,6 @@
       "./extensions/core/custom-core-ui.ts",
       "./extensions/modes/question-first-plan-mode.ts",
       "./extensions/policies/custom-system-prompt.ts",
-      "./extensions/providers/opencode-free-models.ts",
-      "./extensions/providers/opencode-go-models.ts",
       "./tools/web-fetch/index.ts"
     ],
     "themes": [

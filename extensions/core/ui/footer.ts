@@ -1,46 +1,16 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { readJsonObject, readConfigSection, writeJsonConfig } from "../../../src/shared/config.js";
-import { SETTINGS_PATH, CUSTOM_CONFIG_PATH } from "../../../src/shared/paths.js";
 import { formatTokens } from "../../../src/shared/formatting.js";
-import { type FooterTone, type FooterGlyphs, footerGlyphs } from "./nerd-fonts.js";
-import { type RunSummary, formatRunSummary } from "./run-summary.js";
+import { type FooterTone, footerGlyphs } from "./nerd-fonts.js";
 import { basename, dirname } from "node:path";
 
-const FOOTER_PRESETS = ["default", "minimal", "compact", "codex"] as const;
-export type FooterPreset = (typeof FOOTER_PRESETS)[number];
-export const DEFAULT_FOOTER_PRESET: FooterPreset = "codex";
-const LEGACY_FOOTER_PRESET_SETTING_KEY = "customCoreUiFooterPreset";
 const PLAN_STATE_ENTRY = "question-first-plan-mode";
 
 interface FooterSegment {
   text: string;
-  color: FooterTone;
+  color?: FooterTone;
   bold?: boolean;
-}
-
-export function isFooterPreset(value: unknown): value is FooterPreset {
-  return typeof value === "string" && FOOTER_PRESETS.some((preset) => preset === value);
-}
-
-export function readFooterPreset(): FooterPreset {
-  const custom = readJsonObject(CUSTOM_CONFIG_PATH);
-  const ui = readConfigSection(custom, "ui");
-  if (isFooterPreset(ui?.footerPreset)) {
-    return ui!.footerPreset as FooterPreset;
-  }
-
-  const settings = readJsonObject(SETTINGS_PATH);
-  const legacyPreset = settings?.[LEGACY_FOOTER_PRESET_SETTING_KEY];
-  return isFooterPreset(legacyPreset) ? legacyPreset : DEFAULT_FOOTER_PRESET;
-}
-
-export function persistFooterPreset(preset: FooterPreset): void {
-  const config = readJsonObject(CUSTOM_CONFIG_PATH) ?? {};
-  const ui = readConfigSection(config, "ui") ?? {};
-  (ui as Record<string, unknown>).footerPreset = preset;
-  config.ui = ui;
-  writeJsonConfig(CUSTOM_CONFIG_PATH, config);
+  formatter?: (theme: any, text: string) => string;
 }
 
 function shortModelName(name: string | undefined): string {
@@ -66,9 +36,18 @@ function shortDir(cwd: string): string {
 
 function contextTone(percent: number | undefined): FooterTone {
   if (percent == null) return "dim";
-  if (percent >= 90) return "error";
-  if (percent >= 70) return "warning";
   return "muted";
+}
+
+function subtleAnsi256(code: number, text: string): string {
+  return `\x1b[38;5;${code}m${text}\x1b[39m`;
+}
+
+function formatContextUsage(theme: any, text: string, percent: number | undefined): string {
+  if (percent == null) return theme.fg("dim", text);
+  if (percent > 80) return subtleAnsi256(131, text);
+  if (percent > 40) return subtleAnsi256(179, text);
+  return theme.fg("muted", text);
 }
 
 function compactThinkingLevel(level: string | undefined): string {
@@ -90,7 +69,7 @@ function renderFooterSegments(theme: any, separator: string, segments: FooterSeg
   return visible
     .map((segment, index) => {
       const text = segment.bold ? theme.bold(segment.text) : segment.text;
-      const content = theme.fg(segment.color, text);
+      const content = segment.formatter ? segment.formatter(theme, text) : theme.fg(segment.color ?? "text", text);
       return index === 0 ? content : theme.fg("borderMuted", ` ${separator} `) + content;
     })
     .join("");
@@ -117,72 +96,7 @@ function isPlanModeActive(ctx: ExtensionContext): boolean {
   return false;
 }
 
-function resolveFooterSegments(
-  preset: FooterPreset,
-  parts: {
-    model: string;
-    usageText: string;
-    usagePercent: number | undefined;
-    dir: string;
-    gitBranch: string;
-    thinkingLevel: string | undefined;
-    planActive: boolean;
-    glyphs: FooterGlyphs;
-    runSummary?: RunSummary;
-  },
-): { left: FooterSegment[]; right: FooterSegment[] } {
-  const modelSegment: FooterSegment = { text: `${parts.glyphs.model} ${parts.model}`, color: "accent", bold: true };
-  const contextSegment: FooterSegment = {
-    text: `${parts.glyphs.context} ${parts.usageText}`,
-    color: contextTone(parts.usagePercent),
-  };
-  const dirSegment: FooterSegment = { text: `${parts.glyphs.dir} ${parts.dir}`, color: "dim" };
-  const gitSegment: FooterSegment | null = parts.gitBranch
-    ? { text: `${parts.glyphs.git} ${parts.gitBranch}`, color: "success" }
-    : null;
-  const thinkingSegment: FooterSegment = {
-    text: `${parts.glyphs.thinking} ${compactThinkingLevel(parts.thinkingLevel)}`,
-    color: thinkingTone(parts.thinkingLevel),
-    bold: parts.thinkingLevel !== "off",
-  };
-
-  const runSummarySegment: FooterSegment | null = parts.runSummary
-    ? { text: `✓ ${formatRunSummary(parts.runSummary)}`, color: "success", bold: true }
-    : null;
-
-  let left: FooterSegment[];
-  let right: FooterSegment[] = runSummarySegment ? [runSummarySegment] : [thinkingSegment];
-  switch (preset) {
-    case "minimal":
-      left = [dirSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
-      break;
-    case "compact":
-      left = [modelSegment, gitSegment, contextSegment].filter((segment): segment is FooterSegment => segment !== null);
-      break;
-    case "codex":
-      left = [dirSegment, gitSegment].filter((segment): segment is FooterSegment => segment !== null);
-      right = runSummarySegment ? [runSummarySegment] : [modelSegment, contextSegment, thinkingSegment];
-      break;
-    case "default":
-    default:
-      left = [modelSegment, gitSegment, contextSegment, dirSegment].filter((segment): segment is FooterSegment => segment !== null);
-      if (runSummarySegment) right = [runSummarySegment];
-      break;
-  }
-
-  if (parts.planActive) {
-    right.push({ text: `${parts.glyphs.plan} PLAN`, color: "warning", bold: true });
-  }
-
-  return { left, right };
-}
-
-export function installFooter(
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  preset: FooterPreset,
-  getRunSummary: () => RunSummary | undefined,
-): void {
+export function installFooter(pi: ExtensionAPI, ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
 
   const glyphs = footerGlyphs();
@@ -214,20 +128,31 @@ export function installFooter(
               ? `${roundedPercent}%/${formatTokens(contextWindow)}`
               : `${roundedPercent}%`;
 
-        const segments = resolveFooterSegments(preset, {
-          model,
-          usageText,
-          usagePercent,
-          dir,
-          gitBranch,
-          thinkingLevel,
-          planActive: isPlanModeActive(ctx),
-          glyphs,
-          runSummary: getRunSummary(),
-        });
+        const leftSegments: FooterSegment[] = [
+          { text: `${glyphs.dir} ${dir}`, color: "dim" },
+          ...(gitBranch ? [{ text: `${glyphs.git} ${gitBranch}`, color: "success" as const }] : []),
+        ];
 
-        const left = " " + renderFooterSegments(theme, glyphs.separator, segments.left);
-        const right = renderFooterSegments(theme, glyphs.separator, segments.right) + " ";
+        const rightSegments: FooterSegment[] = [
+          { text: `${glyphs.model} ${model}`, color: "accent", bold: true },
+          {
+            text: `${glyphs.context} ${usageText}`,
+            color: contextTone(usagePercent),
+            formatter: (theme, text) => formatContextUsage(theme, text, usagePercent),
+          },
+          {
+            text: `${glyphs.thinking} ${compactThinkingLevel(thinkingLevel)}`,
+            color: thinkingTone(thinkingLevel),
+            bold: thinkingLevel !== "off",
+          },
+        ];
+
+        if (isPlanModeActive(ctx)) {
+          rightSegments.push({ text: `${glyphs.plan} PLAN`, color: "warning", bold: true });
+        }
+
+        const left = " " + renderFooterSegments(theme, glyphs.separator, leftSegments);
+        const right = renderFooterSegments(theme, glyphs.separator, rightSegments) + " ";
         const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
         return [truncateToWidth(left + " ".repeat(gap) + right, width, "")];
       },

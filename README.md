@@ -6,7 +6,7 @@ This repo is organized for maintainability (similar high-level style to larger P
 
 ## What this repo contains
 
-- **Extensions** for env loading, UI, planning workflow, model filtering, and prompt behavior
+- **Extensions** for env loading, UI, planning workflow, and prompt behavior
 - **Web fetch tool** implemented under `tools/web-fetch`
 
 ## Repository layout
@@ -103,7 +103,9 @@ Current keys used by this bundle:
 
 - `planMode` — plan mode model/thinking profiles
 - `webFetch` — web-fetch model/timeouts/extensions settings
-- `ui.theme`, `ui.footerPreset`, and `ui.banner` — custom core UI preferences
+- `ui.banner` — custom core UI preference
+
+Theme selection uses Pi's native theme support via `/settings` or `settings.json.theme`. Bundled themes from this package remain available through `package.json#pi.themes`.
 
 ## Plan mode model/thinking config
 
@@ -121,18 +123,14 @@ Example:
     },
     "plan": {
       "model": "openai-codex/gpt-5.4"
-    },
-    "implement": {
-      "model": "openai-codex/gpt-5.3-codex",
-      "thinkingLevel": "medium"
     }
   }
 }
 ```
 
-Resolution order for each phase (`plan` or `implement`):
+Resolution order for the plan phase:
 
-1. phase-specific value (`plan.*` or `implement.*`)
+1. `plan.*`
 2. `defaults.*`
 3. keep current session value
 
@@ -144,42 +142,18 @@ Notes:
 
 - Use `provider/model-id` for model names when possible.
 - On manual `/plan off`, previous model/thinking (before plan mode) is restored.
-- When selecting **Implement now** from plan mode, implement profile is applied.
 - Legacy `~/.pi/agent/plan-mode.json` is still read as a fallback when `pi-agent-custom.json.planMode` is absent.
 - `settings.json.planMode` is also accepted as a compatibility fallback.
 
+## Plan mode
 
+Plan mode is question-first and markdown-first:
 
-## Plan artifacts
-
-When plan mode generates a plan, it saves it as a markdown file artifact:
-
-```text
-plans/
-└── 2026-04-16-add-auth/
-    └── plan.md
-```
-
-Each plan file includes YAML frontmatter with title, date, and status:
-
-```markdown
----
-title: "Add user authentication"
-date: 2026-04-16
-status: draft
----
-
-## Plan
-
-1. Add login page
-2. Implement JWT tokens
-3. ...
-```
-
-- Plans are created via the `write_plan` tool (available during plan mode)
-- The `status` field is updated to `approved` when implementation starts
-- The `/planview` command shows the current plan as a rendered markdown overlay
-- Plan directories are gitignored by default — they're session artifacts, not source code
+- `ask_questions` is always available (normal mode and plan mode)
+- `/plan on` switches to read-only planning tools and plan-focused prompting
+- `/plan off` restores normal tool access and model profile
+- plans are rendered directly in the assistant response as markdown
+- if the user wants the plan written to disk, the agent can use normal file tools and a user-specified path
 
 Commands:
 
@@ -187,7 +161,6 @@ Commands:
 - `/plan on` — Enable plan mode
 - `/plan off` — Disable plan mode
 - `/plan <task>` — Enable plan mode with a task
-- `/planview` — View the current plan artifact
 - `Ctrl+Alt+P` — Toggle plan mode shortcut
 
 ## Development quality gates

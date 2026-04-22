@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { readJsonObject } from "../../../src/shared/config.js";
 import { CUSTOM_CONFIG_PATH, SETTINGS_PATH, PLAN_MODE_LEGACY_CONFIG_PATH } from "../../../src/shared/paths.js";
-import { type PlanModeConfig, type ModeProfileConfig, VALID_THINKING_LEVELS, normalizeThinkingLevel } from "../../../src/shared/types.js";
+import { type PlanModeConfig, type ModeProfileConfig, normalizeThinkingLevel } from "../../../src/shared/types.js";
 
 export type { PlanModeConfig, ModeProfileConfig };
 export { normalizeThinkingLevel };
