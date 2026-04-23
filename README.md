@@ -71,8 +71,11 @@ This repository is organized for production maintenance and open-source collabor
 
 This will:
 
-- install npm dependencies
-- register this repo path in `~/.pi/agent/settings.json` under `packages`
+- sync the package into `~/.pi/agent/packages/<package-name>` (excluding `.git` and `node_modules`)
+- install npm dependencies in that installed package directory
+- register the installed package path in `~/.pi/agent/settings.json` under `packages`
+
+This means runtime behavior no longer depends on your git checkout location.
 
 Then restart Pi or run `/reload`.
 
@@ -88,7 +91,12 @@ Then restart Pi or run `/reload`.
 ./uninstall.sh
 ```
 
-This only removes this repo path from `~/.pi/agent/settings.json`.
+By default this:
+
+- removes package registration from `~/.pi/agent/settings.json`
+- removes the installed package directory under `~/.pi/agent/packages/<package-name>`
+
+Use `./uninstall.sh --keep-files` to unregister only and keep installed files.
 
 ### Dry run
 
@@ -101,8 +109,9 @@ This only removes this repo path from `~/.pi/agent/settings.json`.
 By default scripts target:
 
 - `~/.pi/agent/settings.json`
+- `~/.pi/agent/packages/`
 
-Override with:
+Override agent root with:
 
 ```bash
 PI_AGENT_DIR=/path/to/.pi/agent ./install.sh

@@ -36,6 +36,8 @@ All notable changes to this project are documented in this file.
   - `tests/unit/shared/**`
 - Updated docs to reflect current architecture and removed stale provider-extension references.
 - Plan mode persisted state continues to include model/thinking pre-plan snapshot.
+- Install flow now syncs this package into `~/.pi/agent/packages/<package-name>` and registers that installed path (instead of relying on the git checkout path).
+- Uninstall now removes both package registration and installed package directory (with `--keep-files` option).
 - Install/uninstall scripts fail fast on malformed settings JSON.
 
 ### Fixed

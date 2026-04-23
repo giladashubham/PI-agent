@@ -82,19 +82,99 @@ fi
 echo "[smoke] validating install/uninstall parse guards"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
-mkdir -p "$TMP_DIR/agent"
-printf '{invalid json' > "$TMP_DIR/agent/settings.json"
+mkdir -p "$TMP_DIR/agent-bad"
+printf '{invalid json' > "$TMP_DIR/agent-bad/settings.json"
 
-if PI_AGENT_DIR="$TMP_DIR/agent" PI_SKIP_NPM_INSTALL=1 ./install.sh >"$TMP_DIR/install.out" 2>&1; then
+if PI_AGENT_DIR="$TMP_DIR/agent-bad" PI_SKIP_NPM_INSTALL=1 ./install.sh >"$TMP_DIR/install-bad.out" 2>&1; then
   echo "install.sh should fail on malformed settings.json" >&2
   exit 1
 fi
-grep -q "Failed to parse" "$TMP_DIR/install.out"
+grep -q "Failed to parse" "$TMP_DIR/install-bad.out"
 
-if PI_AGENT_DIR="$TMP_DIR/agent" ./uninstall.sh >"$TMP_DIR/uninstall.out" 2>&1; then
+if PI_AGENT_DIR="$TMP_DIR/agent-bad" ./uninstall.sh >"$TMP_DIR/uninstall-bad.out" 2>&1; then
   echo "uninstall.sh should fail on malformed settings.json" >&2
   exit 1
 fi
-grep -q "Failed to parse" "$TMP_DIR/uninstall.out"
+grep -q "Failed to parse" "$TMP_DIR/uninstall-bad.out"
+
+echo "[smoke] validating install target path and uninstall cleanup"
+mkdir -p "$TMP_DIR/agent-good"
+printf '{}' > "$TMP_DIR/agent-good/settings.json"
+
+if ! PI_AGENT_DIR="$TMP_DIR/agent-good" PI_SKIP_NPM_INSTALL=1 ./install.sh >"$TMP_DIR/install-good.out" 2>&1; then
+  cat "$TMP_DIR/install-good.out" >&2
+  exit 1
+fi
+
+AGENT_DIR="$TMP_DIR/agent-good" SOURCE_DIR="$ROOT_DIR" node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const agentDir = process.env.AGENT_DIR;
+const sourceDir = process.env.SOURCE_DIR;
+
+const settingsPath = path.join(agentDir, 'settings.json');
+const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+const pkg = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
+
+const packageName = typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : 'pi-package';
+const safeName = packageName
+  .replace(/^@/, '')
+  .replace(/[\/\\]/g, '-')
+  .replace(/[^A-Za-z0-9._-]/g, '-') || 'pi-package';
+
+const expectedInstallDir = path.join(agentDir, 'packages', safeName);
+
+if (!Array.isArray(settings.packages)) {
+  throw new Error('settings.packages must be an array after install');
+}
+if (!settings.packages.includes(expectedInstallDir)) {
+  throw new Error(`Expected settings.packages to include ${expectedInstallDir}`);
+}
+
+const sourceNorm = path.resolve(sourceDir);
+for (const entry of settings.packages) {
+  if (typeof entry === 'string' && path.resolve(entry) === sourceNorm) {
+    throw new Error(`settings.packages should not include source repository path: ${sourceNorm}`);
+  }
+}
+
+if (!fs.existsSync(expectedInstallDir)) {
+  throw new Error(`Expected installed package directory at ${expectedInstallDir}`);
+}
+NODE
+
+if ! PI_AGENT_DIR="$TMP_DIR/agent-good" ./uninstall.sh >"$TMP_DIR/uninstall-good.out" 2>&1; then
+  cat "$TMP_DIR/uninstall-good.out" >&2
+  exit 1
+fi
+
+AGENT_DIR="$TMP_DIR/agent-good" SOURCE_DIR="$ROOT_DIR" node <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+
+const agentDir = process.env.AGENT_DIR;
+const sourceDir = process.env.SOURCE_DIR;
+
+const settingsPath = path.join(agentDir, 'settings.json');
+const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+const pkg = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
+
+const packageName = typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : 'pi-package';
+const safeName = packageName
+  .replace(/^@/, '')
+  .replace(/[\/\\]/g, '-')
+  .replace(/[^A-Za-z0-9._-]/g, '-') || 'pi-package';
+
+const expectedInstallDir = path.join(agentDir, 'packages', safeName);
+
+if (Array.isArray(settings.packages) && settings.packages.includes(expectedInstallDir)) {
+  throw new Error(`Expected uninstall to remove package registration ${expectedInstallDir}`);
+}
+
+if (fs.existsSync(expectedInstallDir)) {
+  throw new Error(`Expected uninstall to remove installed directory ${expectedInstallDir}`);
+}
+NODE
 
 echo "[smoke] all checks passed"
