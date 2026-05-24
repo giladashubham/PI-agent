@@ -26,13 +26,13 @@ describe("getNormalModeToolNames", () => {
 });
 
 describe("getPlanModeToolNames", () => {
-  it("keeps read-only tools and ask_questions", () => {
+  it("keeps read-only tools, ask_questions, and consult_advisor", () => {
     expect(
       getPlanModeToolNames(
-        ["read", "bash", "web_fetch", "edit", "ask_questions"],
-        ["read", "bash", "edit", "web_fetch"],
+        ["read", "bash", "web_fetch", "edit", "ask_questions", "consult_advisor"],
+        ["read", "bash", "edit", "web_fetch", "consult_advisor"],
       ),
-    ).toEqual(["read", "bash", "web_fetch", "ask_questions"]);
+    ).toEqual(["read", "bash", "web_fetch", "consult_advisor", "ask_questions"]);
   });
 
   it("does not include ask_questions when unavailable", () => {

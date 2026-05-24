@@ -26,7 +26,7 @@ This directory contains the lightweight plan-mode modules used by `extensions/mo
 
 - `plan-prompts.ts`
   - Plan-mode system prompt snippet
-  - Plan-mode tool whitelist
+  - Plan-mode tool whitelist (includes `consult_advisor` for cross-mode advisory review)
 
 - `bash-safety.ts`
   - Read-only bash policy used while `/plan` is active

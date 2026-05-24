@@ -22,6 +22,7 @@ Pi loads resources from `package.json`:
   - `extensions/core/env-loader.ts`
   - `extensions/core/ui/index.ts`
   - `extensions/modes/plan/index.ts`
+  - `extensions/modes/advisor/index.ts`
   - `extensions/policies/custom-system-prompt.ts`
   - `tools/web-fetch/index.ts`
 - Themes: `themes/`
@@ -49,6 +50,17 @@ Lightweight plan mode modules.
 - `plan-prompts.ts` — plan-mode prompt and whitelist
 - `bash-safety.ts` — read-only bash allowlist/denylist
 - `plan-config.ts` — optional model/thinking profile apply/restore
+
+## `extensions/modes/advisor/`
+
+Advisor-mode modules.
+
+- `index.ts` — `/advisor` orchestration, advisor-model selector/persistence, mode state persistence, prompt injection, and `consult_advisor` tool registration
+- `advisor-config.ts` — config loading + normalization for `advisorMode`
+- `advisor-context.ts` — bounded advisor payload builder (objective/draft/files/snippets)
+- `advisor-prompts.ts` — primary and advisor role prompt snippets
+- `advisor-tool-policy.ts` — strict vs research tool allowlist helpers
+- `advisor-subagent.ts` — Pi subprocess invocation + JSON-stream response parsing
 
 ## `extensions/policies/`
 
@@ -98,7 +110,7 @@ Cross-domain shared utilities:
 5. Tool calls execute (parallel by default)
 6. Results render in TUI
 
-During `/plan`, the plan extension constrains active tools and applies the read-only bash safety gate.
+During `/plan`, the plan extension constrains active tools and applies the read-only bash safety gate. During `/advisor`, the advisor extension injects consultation guidance and exposes `consult_advisor` with subprocess/tool guardrails.
 
 ## Web-fetch pipeline
 

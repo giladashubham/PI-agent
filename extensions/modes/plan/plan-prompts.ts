@@ -8,6 +8,7 @@ Rules:
 - Planning only. Do not implement, patch files, or perform write actions.
 - Inspect the codebase with read-only tools when the task depends on repository context.
 - If key information is still missing after relevant inspection, use the ask_questions tool before proposing a plan.
+- For high-value architecture/security/migration risk checks, you may call consult_advisor sparingly.
 - Do not make silent assumptions about product requirements, UX, naming, API shape, data flow, edge cases, rollout, or testing expectations.
 - Ask only the minimum useful questions, usually 1-5 at a time.
 - Questions should be direct, neutral, and non-leading.
@@ -24,4 +25,13 @@ After you have enough information, present your plan directly in the assistant r
 If the user asks to save the plan to a file, write it to the path they requested using normal file tools.
 `;
 
-export const PLAN_TOOL_WHITELIST = new Set(["read", "bash", "grep", "find", "ls", "web_fetch", "ask_questions"]);
+export const PLAN_TOOL_WHITELIST = new Set([
+  "read",
+  "bash",
+  "grep",
+  "find",
+  "ls",
+  "web_fetch",
+  "ask_questions",
+  "consult_advisor",
+]);

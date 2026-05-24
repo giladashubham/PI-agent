@@ -13,6 +13,10 @@ interface FooterSegment {
   formatter?: (theme: any, text: string) => string;
 }
 
+function isStaleExtensionError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("extension instance is stale");
+}
+
 function shortModelName(name: string | undefined): string {
   if (!name) return "no model";
   const cleaned = name.replace(/^claude\s*/i, "").trim();
@@ -112,11 +116,24 @@ export function installFooter(pi: ExtensionAPI, ctx: ExtensionContext): void {
         unsubscribeBranchChange();
       },
       render(width: number): string[] {
-        const usage = ctx.getContextUsage();
-        const model = shortModelName(ctx.model?.name);
-        const contextWindow = ctx.model?.contextWindow || 0;
-        const dir = shortDir(ctx.cwd);
-        const thinkingLevel = pi.getThinkingLevel?.();
+        let usage!: ReturnType<ExtensionContext["getContextUsage"]>;
+        let model!: string;
+        let contextWindow!: number;
+        let dir!: string;
+        let thinkingLevel!: string;
+
+        try {
+          usage = ctx.getContextUsage();
+          const currentModel = ctx.model;
+          model = shortModelName(currentModel?.name);
+          contextWindow = currentModel?.contextWindow || 0;
+          dir = shortDir(ctx.cwd);
+          thinkingLevel = pi.getThinkingLevel?.() ?? "off";
+        } catch (error) {
+          if (!isStaleExtensionError(error)) throw error;
+          return [" ".repeat(Math.max(1, width))];
+        }
+
         const gitBranch = compactBranchName(footerData.getGitBranch());
 
         const usagePercent = usage?.percent ?? undefined;

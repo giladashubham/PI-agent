@@ -1,69 +1,47 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { installInputEditor } from "./input-editor.js";
 import { showBanner, hideBanner, readBannerEnabled } from "./banner.js";
-import {
-  type ChangedFileEntry,
-  formatChangedFilePath,
-  countContentLines,
-  parseDiffStats,
-  upsertChangedFile,
-  renderChangedFilesWidget,
-} from "./changed-files.js";
 import { installFooter } from "./footer.js";
 
-export default function customCoreUi(pi: ExtensionAPI) {
-  let lastCtx: ExtensionContext | undefined;
-  let changedFiles: ChangedFileEntry[] = [];
+const CHANGED_FILES_WIDGET_KEY = "custom-core-ui-changed-files";
 
+function clearChangedFilesWidget(ctx: ExtensionContext | undefined): void {
+  if (!ctx?.hasUI) return;
+  ctx.ui.setWidget(CHANGED_FILES_WIDGET_KEY, undefined);
+}
+
+export default function customCoreUi(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
-    lastCtx = ctx;
-    changedFiles = [];
     installInputEditor(ctx);
     if (readBannerEnabled()) showBanner(ctx);
     else hideBanner(ctx);
-    renderChangedFilesWidget(ctx, changedFiles);
+    clearChangedFilesWidget(ctx);
     installFooter(pi, ctx);
   });
 
-  pi.on("agent_start", async () => {
-    changedFiles = [];
-    if (lastCtx?.hasUI) {
-      renderChangedFilesWidget(lastCtx, changedFiles);
-      installFooter(pi, lastCtx);
-    }
+  pi.on("session_shutdown", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    hideBanner(ctx);
+    clearChangedFilesWidget(ctx);
+    ctx.ui.setFooter(undefined);
   });
 
-  pi.on("tool_result", async (event, ctx) => {
-    lastCtx = ctx;
-    if (!ctx.hasUI || event.isError) return;
-    if (event.toolName !== "edit" && event.toolName !== "write") return;
-
-    const rawPath = event.input.path;
-    if (typeof rawPath !== "string" || !rawPath.trim()) return;
-
-    const path = formatChangedFilePath(ctx.cwd, rawPath);
-    const stats =
-      event.toolName === "edit"
-        ? parseDiffStats((event.details as { diff?: string } | undefined)?.diff)
-        : { added: countContentLines(typeof event.input.content === "string" ? event.input.content : ""), removed: 0 };
-
-    changedFiles = upsertChangedFile(changedFiles, path, event.toolName, stats);
-    renderChangedFilesWidget(ctx, changedFiles);
+  pi.on("agent_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    clearChangedFilesWidget(ctx);
+    installFooter(pi, ctx);
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    lastCtx = ctx;
     if (!ctx.hasUI) return;
-
-    renderChangedFilesWidget(ctx, changedFiles);
+    clearChangedFilesWidget(ctx);
     installFooter(pi, ctx);
   });
 
-  pi.on("input", async () => {
-    hideBanner(lastCtx);
-    if (lastCtx?.hasUI) {
-      renderChangedFilesWidget(lastCtx, []);
-      installFooter(pi, lastCtx);
-    }
+  pi.on("input", async (_event, ctx) => {
+    hideBanner(ctx);
+    clearChangedFilesWidget(ctx);
+    if (!ctx.hasUI) return;
+    installFooter(pi, ctx);
   });
 }

@@ -23,6 +23,7 @@
       "./extensions/core/env-loader.ts",
       "./extensions/core/ui/index.ts",
       "./extensions/modes/plan/index.ts",
+      "./extensions/modes/advisor/index.ts",
       "./extensions/policies/custom-system-prompt.ts",
       "./tools/web-fetch/index.ts"
     ],

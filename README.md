@@ -9,6 +9,7 @@ This repository is organized for production maintenance and open-source collabor
 - Runtime extensions (`extensions/**`)
   - core UI + env loader
   - lightweight `/plan` mode
+  - `/advisor` mode with `consult_advisor` sub-agent tool
   - custom system prompt policy
 - Web fetch tool (`tools/web-fetch/**`)
 - Shared utilities (`src/shared/**`)
@@ -29,13 +30,20 @@ This repository is organized for production maintenance and open-source collabor
 │   │       ├── input-editor.ts
 │   │       └── nerd-fonts.ts
 │   ├── modes/
-│   │   └── plan/
+│   │   ├── plan/
+│   │   │   ├── index.ts
+│   │   │   ├── ask-questions-tool.ts
+│   │   │   ├── bash-safety.ts
+│   │   │   ├── plan-config.ts
+│   │   │   ├── plan-prompts.ts
+│   │   │   └── tool-sets.ts
+│   │   └── advisor/
 │   │       ├── index.ts
-│   │       ├── ask-questions-tool.ts
-│   │       ├── bash-safety.ts
-│   │       ├── plan-config.ts
-│   │       ├── plan-prompts.ts
-│   │       └── tool-sets.ts
+│   │       ├── advisor-config.ts
+│   │       ├── advisor-context.ts
+│   │       ├── advisor-prompts.ts
+│   │       ├── advisor-subagent.ts
+│   │       └── advisor-tool-policy.ts
 │   └── policies/
 │       └── custom-system-prompt.ts
 ├── tools/
@@ -126,6 +134,7 @@ Bundle-specific settings live in:
 Supported keys used by this bundle:
 
 - `planMode` — plan mode model/thinking profiles
+- `advisorMode` — advisor sub-agent model/profile/limits
 - `webFetch` — web-fetch model/timeouts/extensions settings
 - `ui.banner` — custom core UI preference
 
@@ -152,6 +161,24 @@ Commands:
 - `/plan off` — Disable plan mode
 - `/plan <task>` — Enable plan mode with a task
 - `Ctrl+Alt+P` — Toggle plan mode shortcut
+
+## Advisor mode
+
+Advisor mode lets the primary model consult a larger advisor sub-agent.
+
+- `/advisor` — Toggle advisor mode
+- `/advisor on` — Enable advisor mode
+- `/advisor off` — Disable advisor mode
+- `/advisor model` — Open advisor model selector
+- `/advisor model <provider/model-id>` — Set advisor model directly
+- `consult_advisor` tool is available to the model when high-value review is needed
+- Profiles:
+  - `strict` — no advisor tools
+  - `research` — read-only repo tools (`read`, `grep`, `find`, `ls`) + `web_fetch`
+
+The advisor subprocess is guarded with `PI_ADVISOR_SUBAGENT=1`, `--no-extensions`, and call budgets.
+
+`consult_advisor` is also available while `/plan` mode is active.
 
 ## Development quality gates
 

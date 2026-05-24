@@ -50,6 +50,63 @@ Resolution for `/plan on` profile:
 
 On `/plan off`, pre-plan model/thinking are restored when available.
 
+## `advisorMode`
+
+Read order:
+
+1. `pi-agent-custom.json.advisorMode`
+2. `settings.json.advisorMode`
+
+Schema:
+
+```json
+{
+  "advisorMode": {
+    "enabled": false,
+    "advisorModel": "anthropic/claude-sonnet-4-5",
+    "thinkingLevel": "high",
+    "toolProfile": "research",
+    "timeoutMs": 60000,
+    "maxAdvisorCallsPerTurn": 1,
+    "maxAdvisorCallsPerSession": 20,
+    "maxFiles": 3,
+    "maxFileBytes": 12000,
+    "maxDraftBytes": 16000,
+    "maxSnippetBytes": 8000,
+    "allowReadOnlyBash": false,
+    "autoSuggest": true,
+    "triggers": {
+      "architecture": true,
+      "migration": true,
+      "security": true,
+      "riskyRefactor": false
+    }
+  }
+}
+```
+
+Fields:
+
+- `enabled` — default advisor mode state at session start
+- `advisorModel` — model ref for advisor subprocess (`provider/model-id`)
+- `thinkingLevel` — `off|low|medium|high|xhigh`
+- `toolProfile` — `strict` (no tools) or `research` (read-only tools + `web_fetch`)
+- `timeoutMs` — subprocess timeout in milliseconds
+- `maxAdvisorCallsPerTurn` — per-turn budget limit
+- `maxAdvisorCallsPerSession` — per-session budget limit
+- `maxFiles`, `maxFileBytes`, `maxDraftBytes`, `maxSnippetBytes` — payload caps for context packaging
+- `allowReadOnlyBash` — optionally include `bash` in advisor research profile tool allowlist
+- `autoSuggest`, `triggers.*` — reserved for future auto-consult suggestions
+
+Enable requirements:
+
+- `advisorModel` must be configured
+- `thinkingLevel` must be valid
+- `toolProfile` must be `strict` or `research`
+- `timeoutMs` must be positive
+
+You can set `advisorModel` interactively with `/advisor model` or directly via `/advisor model <provider/model-id>`.
+
 ## `webFetch`
 
 Read order:

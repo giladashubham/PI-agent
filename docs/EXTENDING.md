@@ -57,7 +57,7 @@ This guide covers how to add new extensions, tools, and themes to this PI-Agent 
 | Category | Directory | Purpose |
 |---|---|---|
 | Core | `extensions/core/` | Session UX: env loading + UI surface |
-| Modes | `extensions/modes/` | Conversation flow control (plan mode, etc.) |
+| Modes | `extensions/modes/` | Conversation flow control (`/plan`, `/advisor`, etc.) |
 | Policies | `extensions/policies/` | System prompt behavior injection |
 | Tools | `tools/<name>/` | Custom tool implementations |
 
@@ -67,7 +67,7 @@ Common utilities are available in `src/shared/`:
 
 - `config.ts` — JSON config reading/writing with fallback chains
 - `paths.ts` — standard path constants (`PI_AGENT_DIR`, config files, etc.)
-- `types.ts` — shared type definitions (plan mode config, thinking-level helpers)
+- `types.ts` — shared type definitions (mode config helpers, thinking-level normalization)
 - `ansi.ts` — ANSI color helpers
 - `formatting.ts` — number/duration/token formatting
 

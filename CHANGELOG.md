@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Advisor mode extension (`/advisor`) with `consult_advisor` tool:
+  - strict/research advisor profiles
+  - Pi subprocess orchestration with timeout + JSON stream parsing
+  - per-turn/per-session advisor call budgets
+  - recursion guard via `PI_ADVISOR_SUBAGENT`
+  - config support under `advisorMode`
+  - advisor model selector command (`/advisor model`) with persistence to `pi-agent-custom.json`
+  - `consult_advisor` available during `/plan` mode
+- Unit tests for advisor mode modules (`advisor-config`, `advisor-tool-policy`, `advisor-subagent`, `index`).
 - Production engineering baseline:
   - TypeScript typecheck (`tsconfig.json`)
   - ESLint config (`eslint.config.mjs`)
