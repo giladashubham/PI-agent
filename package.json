@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "picomatch": "^4.0.3",
-    "puppeteer": "^24.41.0"
+    "puppeteer": "^25.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
